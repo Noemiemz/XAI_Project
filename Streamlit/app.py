@@ -174,7 +174,7 @@ def homepage():
         sound = uploaded_file.name
         with st.spinner('Fetching Results...'):
             spec = create_spectrogram(sound)
-            model = tf.keras.models.load_model('saved_model/model')
+            model = tf.keras.models.load_model('Streamlit/saved_model/model')
         st.write('### Classification results:')
         class_label,prediction = predictions(spec,model)
         st.write("#### The uploaded audio file is "+class_names[class_label])
