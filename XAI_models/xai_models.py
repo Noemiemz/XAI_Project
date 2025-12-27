@@ -6,6 +6,8 @@ import cv2
 from lime import lime_image
 from skimage.segmentation import mark_boundaries
 from keras.preprocessing.image import img_to_array
+import shap
+from keras.applications.vgg16 import preprocess_input
 
 class Lime:
 
@@ -93,27 +95,42 @@ class GradCAM:
         return(fig)
     
 
-# class SHAP:
-#     def explain(self, image, model, class_idx, class_names=None):
+class SHAP:
+    def explain(self, image, model, class_idx, class_names=None):
+        img_array = img_to_array(image)
+        x = np.expand_dims(img_array,axis=0)
+        x = preprocess_input(x)
+
+        model = tf.keras.applications.VGG16(weights='imagenet', include_top=True)
+
+        # Créer un explainer SHAP pour les images
+        background = x[0:1]  # On utilise l'image elle-même comme fond
+        explainer = shap.GradientExplainer(model, background)
+
+        # Calculer les valeurs SHAP pour l'image
+        shap_values = explainer.shap_values(x)
+
+        # Récupérer les valeurs SHAP pour la classe spécifiée
+        shap_values_for_class = shap_values[class_idx][0]
+
+        # Superposer les valeurs SHAP sur l'image
+        shap_image = shap.image_plot(shap_values_for_class, x[0])
 
 
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
 
+        # Showing the original image and the explanation
+        fig, axs = plt.subplots(1, 2, figsize=(10, 25))
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
 
+        axs[1].imshow(shap_image)
+        axs[1].set_title(f"SHAP - Predicted class: {class_label}")
+        plt.tight_layout()
 
-#         class_label = (
-#             class_names[class_idx]
-#             if class_names and class_idx < len(class_names)
-#             else f"class {class_idx}"
-#         )
-
-#         # Showing the original image and the explanation
-#         fig, axs = plt.subplots(1, 2, figsize=(10, 25))
-#         axs[0].imshow(image)
-#         axs[0].set_title("Original image")
-
-#         axs[1].imshow(superimposed_img)
-#         axs[1].set_title(f"Grad-CAM - Predicted class: {class_label}")
-#         plt.tight_layout()
-
-#         return(fig)
+        return(fig)
 

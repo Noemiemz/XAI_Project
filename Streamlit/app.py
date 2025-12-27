@@ -9,7 +9,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import librosa
-from tensorflow.keras.models import load_model
+# from tensorflow.keras.models import load_model
 import librosa.display, os
 import matplotlib.pyplot as plt
 from keras.preprocessing.image import load_img,img_to_array
@@ -18,8 +18,9 @@ import tensorflow as tf
 from keras.applications.mobilenet import preprocess_input
 import matplotlib.pyplot as plt
 from skimage.util import img_as_float
+from keras.layers import TFSMLayer
 
-from XAI_models.xai_models import Lime, GradCAM
+from XAI_models.xai_models import Lime, GradCAM, SHAP
 from Inference.inference import predict_image
 
 st.set_page_config(
@@ -117,7 +118,7 @@ def homepage():
             st.markdown("### Prediction Result")
 
             with st.spinner("Analyzing audio..."):
-                model = tf.keras.models.load_model('Streamlit/saved_model/model')
+                model = TFSMLayer('Streamlit/saved_model/model', call_endpoint='serving_default')
                 output = predict_image(model, spec)
                 class_label = output["class_idx"]
                 prediction = output["predictions"]
@@ -137,7 +138,7 @@ def homepage():
 
         xai_methods = st.multiselect(
             "Select XAI methods",
-            ["LIME", "Grad-CAM"],
+            ["LIME", "Grad-CAM", "SHAP"],
             default=["LIME"]
         )
 
@@ -163,6 +164,17 @@ def homepage():
                         class_names=class_names
                     )
                     st.pyplot(fig_grad)
+            
+            if "SHAP" in xai_methods:
+                st.markdown("### SHAP Explanation")
+                with st.spinner("Generating XAI results..."):
+                    fig_shap = SHAP().explain(
+                        image=spec,
+                        model=model,
+                        class_idx=class_label,
+                        class_names=class_names
+                    )
+                    st.pyplot(fig_shap)
 
 
 
