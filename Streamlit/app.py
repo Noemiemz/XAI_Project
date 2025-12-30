@@ -19,7 +19,7 @@ from keras.applications.mobilenet import preprocess_input
 import matplotlib.pyplot as plt
 from skimage.util import img_as_float
 
-from XAI_models.xai_models import Lime, GradCAM
+from XAI_models.xai_models import Lime, GradCAM, SHAP
 from Inference.inference import predict_image
 
 st.set_page_config(
@@ -30,6 +30,10 @@ st.set_page_config(
 
 class_names = ['real','fake']
 
+if "prediction_done" not in st.session_state:
+    st.session_state.prediction_done = False
+
+
 def save_file(sound_file):
     # save your sound file in the right folder by following the path
     with open(os.path.join('audio_files/', sound_file.name),'wb') as f:
@@ -38,6 +42,12 @@ def save_file(sound_file):
 
 def create_spectrogram(sound):
     audio_file = os.path.join('audio_files/', sound)
+
+    spec_dir = os.path.join("audio_files", "specs")
+    os.makedirs(spec_dir, exist_ok=True)
+
+    base_name = os.path.splitext(sound)[0]
+    spec_path = os.path.join(spec_dir, f"{base_name}_spec.png")
 
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -48,10 +58,23 @@ def create_spectrogram(sound):
     ms = librosa.feature.melspectrogram(y=y, sr=sr)
     log_ms = librosa.power_to_db(ms, ref=np.max)
     librosa.display.specshow(log_ms, sr=sr)
-    plt.savefig('melspectrogram.png')
-    image_data = load_img('melspectrogram.png',target_size=(224,224))
+    plt.savefig(spec_path)
+    image_data = load_img(spec_path ,target_size=(224,224))
     st.image(image_data)
     return(image_data)
+
+def load_background_spectrograms(folder="audio_files/specs", max_images=20):
+    images = []
+    for file in os.listdir(folder):
+        if file.endswith(".png"):
+            img = load_img(
+                os.path.join(folder, file),
+                target_size=(224, 224)
+            )
+            images.append(img)
+        if len(images) >= max_images:
+            break
+    return images
 
 
 def main():
@@ -104,6 +127,11 @@ def homepage():
             audio_bytes = uploaded_file.read()
             st.audio(audio_bytes, format="audio/wav")
 
+        if uploaded_file is not None:
+            if st.session_state.get("last_file") != uploaded_file.name:
+                st.session_state.last_file = uploaded_file.name
+                st.session_state.prediction_done = False
+
     if uploaded_file:
         with col2:
             st.markdown("### Spectrogram")
@@ -114,14 +142,19 @@ def homepage():
 
     
             # Prediction
-            st.markdown("### Prediction Result")
+            if not st.session_state.prediction_done:
+                with st.spinner("Analyzing audio..."):
+                    model = tf.keras.models.load_model('Streamlit/saved_model/model')
+                    output = predict_image(model, spec)
 
-            with st.spinner("Analyzing audio..."):
-                model = tf.keras.models.load_model('Streamlit/saved_model/model')
-                output = predict_image(model, spec)
-                class_label = output["class_idx"]
-                prediction = output["predictions"]
+                    st.session_state.model = model
+                    st.session_state.output = output
+                    st.session_state.class_label = output["class_idx"]
+                    st.session_state.prediction = output["predictions"]
+                    st.session_state.prediction_done = True
 
+            class_label = st.session_state.class_label
+            prediction = st.session_state.prediction
 
             if class_names[class_label] == "fake":
                 st.error("The audio is **Fake**")
@@ -137,32 +170,51 @@ def homepage():
 
         xai_methods = st.multiselect(
             "Select XAI methods",
-            ["LIME", "Grad-CAM"],
+            ["LIME", "Grad-CAM", "SHAP"],
             default=["LIME"]
         )
 
-        if st.button("Run Explainability"):
+
+        if xai_methods and st.button("Run Explainability"):
+
             if "LIME" in xai_methods:
                 st.markdown("### LIME Explanation")
-                with st.spinner("Generating XAI results..."):
+                with st.spinner("Generating LIME results..."):
                     fig_lime = Lime().explain(
                         image=spec,
-                        model=model,
-                        class_idx=class_label,
+                        model=st.session_state.model,
+                        class_idx=st.session_state.class_label,
                         class_names=class_names
                     )
-                    st.pyplot(fig_lime)
+                    with st.expander("LIME Results"):
+                        st.pyplot(fig_lime, width='content')
 
             if "Grad-CAM" in xai_methods:
                 st.markdown("### Grad-CAM Explanation")
-                with st.spinner("Generating XAI results..."):
+                with st.spinner("Generating Grad-CAM results..."):
                     fig_grad = GradCAM().explain(
                         image=spec,
-                        model=model,
-                        class_idx=class_label,
+                        model=st.session_state.model,
+                        class_idx=st.session_state.class_label,
                         class_names=class_names
                     )
-                    st.pyplot(fig_grad)
+                    with st.expander("Grad-CAM Results"):
+                        st.pyplot(fig_grad, width='content')
+
+            if "SHAP" in xai_methods:
+                st.markdown("### SHAP Explanation")
+                with st.spinner("Generating SHAP results..."):
+                    background_imgs = load_background_spectrograms()
+
+                    fig_shap = SHAP().explain(
+                        image=spec,
+                        model=st.session_state.model,
+                        class_idx=st.session_state.class_label,
+                        background_images=background_imgs,
+                        class_names=class_names
+                    )
+                    with st.expander("SHAP Results"):
+                       st.pyplot(fig_shap, width='content')
 
 
 
