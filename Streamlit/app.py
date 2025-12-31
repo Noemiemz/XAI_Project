@@ -19,8 +19,13 @@ from keras.applications.mobilenet import preprocess_input
 import matplotlib.pyplot as plt
 from skimage.util import img_as_float
 
-from XAI_models.xai_models import Lime, GradCAM
+from XAI_models.xai_models import Lime, GradCAM, SHAP
 from Inference.inference import predict_image
+
+ALLOWED_FILE_TYPES = {
+    "audio": [".wav", ".mp3"],
+    "image": [".png", ".jpg", ".jpeg"]
+}
 
 st.set_page_config(
     page_title="XAI Audio Detection",
@@ -28,9 +33,27 @@ st.set_page_config(
     layout="wide"
 )
 
-class_names = ['real','fake']
+class_names_audio_deepfakes = ['real','fake']
 
-def save_file(sound_file):
+if "prediction_done" not in st.session_state:
+    st.session_state.prediction_done = False
+
+def is_file_allowed(filename, allowed_types):
+    file_type= os.path.splitext(filename)[1]
+    
+    all_types = {ext for ext_list in allowed_types.values() for ext in ext_list}
+
+    return file_type in all_types
+
+
+def get_file_category(filename, allowed_types):
+    ext = os.path.splitext(filename)[1].lower()
+    for category, exts in allowed_types.items():
+        if ext in exts:
+            return category
+    return None
+
+def save_audio_file(sound_file):
     # save your sound file in the right folder by following the path
     with open(os.path.join('audio_files/', sound_file.name),'wb') as f:
          f.write(sound_file.getbuffer())
@@ -38,6 +61,12 @@ def save_file(sound_file):
 
 def create_spectrogram(sound):
     audio_file = os.path.join('audio_files/', sound)
+
+    spec_dir = os.path.join("audio_files", "specs")
+    os.makedirs(spec_dir, exist_ok=True)
+
+    base_name = os.path.splitext(sound)[0]
+    spec_path = os.path.join(spec_dir, f"{base_name}_spec.png")
 
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -48,40 +77,52 @@ def create_spectrogram(sound):
     ms = librosa.feature.melspectrogram(y=y, sr=sr)
     log_ms = librosa.power_to_db(ms, ref=np.max)
     librosa.display.specshow(log_ms, sr=sr)
-    plt.savefig('melspectrogram.png')
-    image_data = load_img('melspectrogram.png',target_size=(224,224))
+    plt.savefig(spec_path)
+    image_data = load_img(spec_path ,target_size=(224,224))
     st.image(image_data)
     return(image_data)
 
+def load_background_spectrograms(folder="audio_files/specs", max_images=20):
+    images = []
+    for file in os.listdir(folder):
+        if file.endswith(".png"):
+            img = load_img(
+                os.path.join(folder, file),
+                target_size=(224, 224)
+            )
+            images.append(img)
+        if len(images) >= max_images:
+            break
+    return images
+
+
 
 def main():
-    with st.sidebar:
-        st.markdown('## XAI Platform')
-        page= st.radio("Navigation", ["Home", "Explanability", "About"], label_visibility="collapsed")
-    if page == "Home":
-        homepage()
-    elif page=="Explanability":
-        homepage()
-    elif page == "About":
-        about()
+    st.sidebar.title('XAI Platform')
+    pipeline = st.sidebar.radio ("What type of detection do you want to do ?:", ["Audio Deepfake Detection", "Lung Cancer Detection"])
+    if pipeline == "Audio Deepfake Detection":
+        audio_pipeline()
+    elif pipeline == "Lung Cancer Detection":
+        lung_cancer_pipeline()
+    else:
+        st.error("Unknown pipeline selected!")
 
-def about():
-    st.title("About present work")
-    st.markdown("**Deepfake audio refers to synthetically created audio by digital or manual means. An emerging field, it is used to not only create legal digital hoaxes, but also fool humans into believing it is a human speaking to them. Through this project, we create our own deep faked audio using Generative Adversarial Neural Networks (GANs) and objectively evaluate generator quality using Fréchet Audio Distance (FAD) metric. We augment a pre-existing dataset of real audio samples with our fake generated samples and classify data as real or fake using MobileNet, Inception, VGG and custom CNN models. MobileNet is the best performing model with an accuracy of 91.5% and precision of 0.507. We further convert our black box deep learning models into white box models, by using explainable AI (XAI) models. We quantitatively evaluate the classification of a MEL Spectrogram through LIME, SHAP and GradCAM models. We compare the features of a spectrogram that an XAI model focuses on to provide a qualitative analysis of frequency distribution in spectrograms.**")
-    st.markdown("**The goal of this project is to study features of audio and bridge the gap of explain ability in deep fake audio detection, through our novel system pipeline. The findings of this study are applicable to the fields of phishing audio calls and digital mimicry detection on video streaming platforms. The use of XAI will provide end-users a clear picture of frequencies in audio that are flagged as fake, enabling them to make better decisions in generation of fake samples through GANs.**")
+# def about():
+#     st.title("About present work")
+#     st.markdown("**Deepfake audio refers to synthetically created audio by digital or manual means. An emerging field, it is used to not only create legal digital hoaxes, but also fool humans into believing it is a human speaking to them. Through this project, we create our own deep faked audio using Generative Adversarial Neural Networks (GANs) and objectively evaluate generator quality using Fréchet Audio Distance (FAD) metric. We augment a pre-existing dataset of real audio samples with our fake generated samples and classify data as real or fake using MobileNet, Inception, VGG and custom CNN models. MobileNet is the best performing model with an accuracy of 91.5% and precision of 0.507. We further convert our black box deep learning models into white box models, by using explainable AI (XAI) models. We quantitatively evaluate the classification of a MEL Spectrogram through LIME, SHAP and GradCAM models. We compare the features of a spectrogram that an XAI model focuses on to provide a qualitative analysis of frequency distribution in spectrograms.**")
+#     st.markdown("**The goal of this project is to study features of audio and bridge the gap of explain ability in deep fake audio detection, through our novel system pipeline. The findings of this study are applicable to the fields of phishing audio calls and digital mimicry detection on video streaming platforms. The use of XAI will provide end-users a clear picture of frequencies in audio that are flagged as fake, enabling them to make better decisions in generation of fake samples through GANs.**")
 
-def homepage():
-    with st.expander("What does this app do?", expanded=True):
-        st.write(
-            """
-            This application detects **deepfake audio** using a deep learning model.
-            It then explains the prediction using **Explainable AI (XAI)** techniques
-            like **LIME** and **Grad-CAM**.
-            """
-        )
+def audio_pipeline():
+    # with st.expander("What does this app do?", expanded=True):
+    #     st.write(
+    #         """
+    #         This application detects **deepfake audio** using a deep learning model.
+    #         It then explains the prediction using **Explainable AI (XAI)** techniques
+    #         like **LIME** and **Grad-CAM**.
+    #         """
+    #     )
 
-
-    st.markdown("## Deepfake Audio Detection with XAI")
+    st.title("Audio Deepfake Detection with XAI")
     st.markdown("Upload an audio file to detect if it's **real** or **fake** and understand the model's decision with Explainability AI (XAI).")
 
     st.divider()
@@ -91,43 +132,58 @@ def homepage():
     with col1:
         st.markdown("### Upload Audio")
         uploaded_file = st.file_uploader(
-            "Choose a WAV file",
-            type="wav",
-            help="Only .wav audio files are supported"
+            "Choose an audio file",
+            type=None,
+            help="Only .wav and .mp3 files are supported"
         )
 
         if not uploaded_file:
-            st.info("Please upload a WAV file to begin.")
+            st.info("Please upload a file to begin.")
             return
 
         if uploaded_file:
+            if not is_file_allowed(uploaded_file.name, {"audio": ALLOWED_FILE_TYPES["audio"]}):
+                st.error("This file type is not allowed. Please upload a .wav or .mp3 file.")
+                return
+            
             audio_bytes = uploaded_file.read()
             st.audio(audio_bytes, format="audio/wav")
+
+        if uploaded_file is not None:
+            if st.session_state.get("last_file") != uploaded_file.name:
+                st.session_state.last_file = uploaded_file.name
+                st.session_state.prediction_done = False
 
     if uploaded_file:
         with col2:
             st.markdown("### Spectrogram")
 
             with st.spinner("Generating Spectrogram..."):
-                save_file(uploaded_file)
+                save_audio_file(uploaded_file)
                 spec = create_spectrogram(uploaded_file.name)
 
     
             # Prediction
-            st.markdown("### Prediction Result")
+            if not st.session_state.prediction_done:
+                with st.spinner("Analyzing audio..."):
+                    model = tf.keras.models.load_model('Streamlit/saved_model/model')
+                    output = predict_image(model, spec)
 
-            with st.spinner("Analyzing audio..."):
-                model = tf.keras.models.load_model('Streamlit/saved_model/model')
-                output = predict_image(model, spec)
-                class_label = output["class_idx"]
-                prediction = output["predictions"]
+                    st.session_state.model = model
+                    st.session_state.output = output
+                    st.session_state.class_label = output["class_idx"]
+                    st.session_state.prediction = output["predictions"]
+                    st.session_state.prediction_done = True
 
+            class_label = st.session_state.class_label
+            prediction = st.session_state.prediction
+            confidence = float(prediction[0][class_label])
 
-            if class_names[class_label] == "fake":
+            if class_names_audio_deepfakes[class_label] == "fake":
                 st.error("The audio is **Fake**")
             else:
                 st.success("The audio is **Real**")
-            confidence = float(prediction[0][class_label])
+
             st.progress(confidence)
             st.caption(f"Confidence: {confidence:.2%}")
 
@@ -137,32 +193,80 @@ def homepage():
 
         xai_methods = st.multiselect(
             "Select XAI methods",
-            ["LIME", "Grad-CAM"],
+            ["LIME", "Grad-CAM", "SHAP"],
             default=["LIME"]
         )
 
-        if st.button("Run Explainability"):
+
+        if xai_methods and st.button("Run Explainability"):
+
             if "LIME" in xai_methods:
                 st.markdown("### LIME Explanation")
-                with st.spinner("Generating XAI results..."):
+                with st.spinner("Generating LIME results..."):
                     fig_lime = Lime().explain(
                         image=spec,
-                        model=model,
-                        class_idx=class_label,
-                        class_names=class_names
+                        model=st.session_state.model,
+                        class_idx=st.session_state.class_label,
+                        class_names=class_names_audio_deepfakes
                     )
-                    st.pyplot(fig_lime)
+                    with st.expander("LIME Results"):
+                        st.pyplot(fig_lime, width='content')
 
             if "Grad-CAM" in xai_methods:
                 st.markdown("### Grad-CAM Explanation")
-                with st.spinner("Generating XAI results..."):
+                with st.spinner("Generating Grad-CAM results..."):
                     fig_grad = GradCAM().explain(
                         image=spec,
-                        model=model,
-                        class_idx=class_label,
-                        class_names=class_names
+                        model=st.session_state.model,
+                        class_idx=st.session_state.class_label,
+                        class_names=class_names_audio_deepfakes
                     )
-                    st.pyplot(fig_grad)
+                    with st.expander("Grad-CAM Results"):
+                        st.pyplot(fig_grad, width='content')
+
+            if "SHAP" in xai_methods:
+                st.markdown("### SHAP Explanation")
+                with st.spinner("Generating SHAP results..."):
+                    background_imgs = load_background_spectrograms()
+
+                    fig_shap = SHAP().explain(
+                        image=spec,
+                        model=st.session_state.model,
+                        class_idx=st.session_state.class_label,
+                        background_images=background_imgs,
+                        class_names=class_names_audio_deepfakes
+                    )
+                    with st.expander("SHAP Results"):
+                       st.pyplot(fig_shap, width='content')
+
+def lung_cancer_pipeline():
+    st.title("Lung Cancer Detection")
+    st.markdown("Upload an x-ray image for lung cancer analysis and understand the model's decision with Explainability AI (XAI).")
+
+    st.divider()
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.markdown("### Upload Image")
+        uploaded_file = st.file_uploader(
+            "Choose an image file",
+            type=None,
+            help="Only .png, .jpg and .jpeg files are supported"
+        )
+
+        if not uploaded_file:
+            st.info("Please upload a file to begin.")
+            return
+
+        if uploaded_file:
+            if not is_file_allowed(uploaded_file.name, {"image": ALLOWED_FILE_TYPES["image"]}):
+                st.error("This file type is not allowed. Please upload a .png, .jpg or .jpeg file.")
+                return
+            
+    if uploaded_file:
+        with col2:
+            st.image(uploaded_file)
 
 
 
