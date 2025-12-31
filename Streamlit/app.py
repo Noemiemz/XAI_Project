@@ -6,18 +6,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 import streamlit as st
-import pandas as pd
 import numpy as np
 import librosa
-from tensorflow.keras.models import load_model
 import librosa.display, os
 import matplotlib.pyplot as plt
-from keras.preprocessing.image import load_img,img_to_array
-from keras.models import load_model
+from keras.preprocessing.image import load_img
 import tensorflow as tf
-from keras.applications.mobilenet import preprocess_input
 import matplotlib.pyplot as plt
-from skimage.util import img_as_float
 
 from XAI_models.xai_models import Lime, GradCAM, SHAP
 from Inference.inference import predict_image
