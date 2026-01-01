@@ -13,8 +13,9 @@ import matplotlib.pyplot as plt
 from keras.preprocessing.image import load_img
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from PIL import Image
 
-from XAI_models.xai_models import Lime, GradCAM, SHAP
+from XAI_models.xai_models import Lime, GradCAM
 from Inference.inference import predict_image
 
 ALLOWED_FILE_TYPES = {
@@ -30,8 +31,18 @@ st.set_page_config(
 
 class_names_audio_deepfakes = ['real','fake']
 
+# Available models
+AVAILABLE_MODELS = {
+    "MobileNet": "Streamlit/saved_model/model",
+    # Add more models here as needed
+    # "InceptionV3": "Streamlit/saved_model/inception_model",
+    # "VGG16": "Streamlit/saved_model/vgg16_model",
+}
+
 if "prediction_done" not in st.session_state:
     st.session_state.prediction_done = False
+if "selected_model" not in st.session_state:
+    st.session_state.selected_model = list(AVAILABLE_MODELS.keys())[0]
 
 def is_file_allowed(filename, allowed_types):
     file_type= os.path.splitext(filename)[1]
@@ -47,6 +58,26 @@ def get_file_category(filename, allowed_types):
         if ext in exts:
             return category
     return None
+
+def cleanup_old_files(filename):
+    """Delete old audio file and its spectrogram"""
+    if filename:
+        # Delete audio file
+        audio_path = os.path.join('audio_files/', filename)
+        if os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+            except Exception:
+                pass
+        
+        # Delete spectrogram
+        base_name = os.path.splitext(filename)[0]
+        spec_path = os.path.join("audio_files", "specs", f"{base_name}_spec.png")
+        if os.path.exists(spec_path):
+            try:
+                os.remove(spec_path)
+            except Exception:
+                pass
 
 def save_audio_file(sound_file):
     # save your sound file in the right folder by following the path
@@ -77,24 +108,30 @@ def create_spectrogram(sound):
     st.image(image_data)
     return(image_data)
 
-def load_background_spectrograms(folder="audio_files/specs", max_images=20):
-    images = []
-    for file in os.listdir(folder):
-        if file.endswith(".png"):
-            img = load_img(
-                os.path.join(folder, file),
-                target_size=(224, 224)
-            )
-            images.append(img)
-        if len(images) >= max_images:
-            break
-    return images
+# Removed load_background_spectrograms as it's no longer needed
+# The new GradientExplainer doesn't require background images
 
 
 
 def main():
     st.sidebar.title('XAI Platform')
     pipeline = st.sidebar.radio ("What type of detection do you want to do ?:", ["Audio Deepfake Detection", "Lung Cancer Detection"])
+    
+    # Model selection (only for Audio Deepfake Detection)
+    if pipeline == "Audio Deepfake Detection":
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Model Selection")
+        selected_model = st.sidebar.selectbox(
+            "Choose a model:",
+            options=list(AVAILABLE_MODELS.keys()),
+            index=list(AVAILABLE_MODELS.keys()).index(st.session_state.selected_model)
+        )
+        
+        # Reset prediction if model changes
+        if selected_model != st.session_state.selected_model:
+            st.session_state.selected_model = selected_model
+            st.session_state.prediction_done = False
+    
     if pipeline == "Audio Deepfake Detection":
         audio_pipeline()
     elif pipeline == "Lung Cancer Detection":
@@ -128,11 +165,16 @@ def audio_pipeline():
         st.markdown("### Upload Audio")
         uploaded_file = st.file_uploader(
             "Choose an audio file",
-            type=None,
+            type=['wav','mp3'],
             help="Only .wav and .mp3 files are supported"
         )
 
         if not uploaded_file:
+            # Clean up old file if user removed it
+            if st.session_state.get("last_file"):
+                cleanup_old_files(st.session_state.last_file)
+                st.session_state.last_file = None
+                st.session_state.prediction_done = False
             st.info("Please upload a file to begin.")
             return
 
@@ -146,6 +188,9 @@ def audio_pipeline():
 
         if uploaded_file is not None:
             if st.session_state.get("last_file") != uploaded_file.name:
+                # Clean up old file when a new file is uploaded
+                if st.session_state.get("last_file"):
+                    cleanup_old_files(st.session_state.last_file)
                 st.session_state.last_file = uploaded_file.name
                 st.session_state.prediction_done = False
 
@@ -156,12 +201,12 @@ def audio_pipeline():
             with st.spinner("Generating Spectrogram..."):
                 save_audio_file(uploaded_file)
                 spec = create_spectrogram(uploaded_file.name)
-
-    
+                
             # Prediction
             if not st.session_state.prediction_done:
                 with st.spinner("Analyzing audio..."):
-                    model = tf.keras.models.load_model('Streamlit/saved_model/model')
+                    model_path = AVAILABLE_MODELS[st.session_state.selected_model]
+                    model = tf.keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
                     output = predict_image(model, spec)
 
                     st.session_state.model = model
@@ -186,53 +231,65 @@ def audio_pipeline():
         st.divider()
         st.markdown("## Explainability")
 
-        xai_methods = st.multiselect(
-            "Select XAI methods",
-            ["LIME", "Grad-CAM", "SHAP"],
-            default=["LIME"]
-        )
+        st.markdown("**Select XAI methods:**")
+        col_lime, col_gradcam, col_shap = st.columns(3, width=500, border=True)
+        
+        with col_lime:
+            use_lime = st.checkbox("LIME", value=True)
+        with col_gradcam:
+            use_gradcam = st.checkbox("Grad-CAM", value=False)
+        with col_shap:
+            use_shap = st.checkbox("SHAP", value=False)
 
 
-        if xai_methods and st.button("Run Explainability"):
+        if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
 
-            if "LIME" in xai_methods:
+            if use_lime:
                 st.markdown("### LIME Explanation")
                 with st.spinner("Generating LIME results..."):
-                    fig_lime = Lime().explain(
-                        image=spec,
-                        model=st.session_state.model,
-                        class_idx=st.session_state.class_label,
-                        class_names=class_names_audio_deepfakes
-                    )
-                    with st.expander("LIME Results"):
-                        st.pyplot(fig_lime, width='content')
+                    try:
+                        fig_lime = Lime().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            class_names=class_names_audio_deepfakes
+                        )
+                        with st.expander("LIME Results"):
+                            st.pyplot(fig_lime, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ LIME Error: {str(e)[:100]}")
 
-            if "Grad-CAM" in xai_methods:
+            if use_gradcam:
                 st.markdown("### Grad-CAM Explanation")
                 with st.spinner("Generating Grad-CAM results..."):
-                    fig_grad = GradCAM().explain(
-                        image=spec,
-                        model=st.session_state.model,
-                        class_idx=st.session_state.class_label,
-                        class_names=class_names_audio_deepfakes
-                    )
-                    with st.expander("Grad-CAM Results"):
-                        st.pyplot(fig_grad, width='content')
+                    try:
+                        fig_grad = GradCAM().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            class_names=class_names_audio_deepfakes
+                        )
+                        with st.expander("Grad-CAM Results"):
+                            st.pyplot(fig_grad, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ Grad-CAM Error: {str(e)[:100]}")
 
-            if "SHAP" in xai_methods:
-                st.markdown("### SHAP Explanation")
-                with st.spinner("Generating SHAP results..."):
-                    background_imgs = load_background_spectrograms()
+            if use_shap:
+                st.markdown("### Gradient-Based Explanation")
+                with st.spinner("Generating explanation..."):
+                    try:
+                        # Import the GradientExplainer
+                        from shap_final_solution import GradientExplainer
 
-                    fig_shap = SHAP().explain(
-                        image=spec,
-                        model=st.session_state.model,
-                        class_idx=st.session_state.class_label,
-                        background_images=background_imgs,
-                        class_names=class_names_audio_deepfakes
-                    )
-                    with st.expander("SHAP Results"):
-                       st.pyplot(fig_shap, width='content')
+                        explainer = GradientExplainer(st.session_state.model)
+                        explanation_map, fig_shap = explainer.explain(
+                            image=spec,
+                            class_idx=st.session_state.class_label
+                        )
+                        with st.expander("Gradient Explanation Results"):
+                            st.pyplot(fig_shap)
+                    except Exception as e:
+                        st.error(f"Explanation Error: {str(e)[:100]}")
 
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
@@ -246,7 +303,7 @@ def lung_cancer_pipeline():
         st.markdown("### Upload Image")
         uploaded_file = st.file_uploader(
             "Choose an image file",
-            type=None,
+            type=['png','jpg','jpeg'],
             help="Only .png, .jpg and .jpeg files are supported"
         )
 
