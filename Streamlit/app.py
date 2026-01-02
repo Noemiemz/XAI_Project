@@ -15,7 +15,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from XAI_models.xai_models import Lime, GradCAM
+from XAI_models.xai_models import Lime, GradCAM, SHAP
 from Inference.inference import predict_image
 
 ALLOWED_FILE_TYPES = {
@@ -108,9 +108,18 @@ def create_spectrogram(sound):
     st.image(image_data)
     return(image_data)
 
-# Removed load_background_spectrograms as it's no longer needed
-# The new GradientExplainer doesn't require background images
-
+def load_background_spectrograms(folder="audio_files/specs", max_images=20):
+    images = []
+    for file in os.listdir(folder):
+        if file.endswith(".png"):
+            img = load_img(
+                os.path.join(folder, file),
+                target_size=(224, 224)
+            )
+            images.append(img)
+        if len(images) >= max_images:
+            break
+    return images
 
 
 def main():
@@ -275,21 +284,25 @@ def audio_pipeline():
                         st.error(f"⚠️ Grad-CAM Error: {str(e)[:100]}")
 
             if use_shap:
-                st.markdown("### Gradient-Based Explanation")
-                with st.spinner("Generating explanation..."):
-                    try:
-                        # Import the GradientExplainer
-                        from shap_final_solution import GradientExplainer
-
-                        explainer = GradientExplainer(st.session_state.model)
-                        explanation_map, fig_shap = explainer.explain(
+                st.markdown("### SHAP Explanation")
+                with st.spinner("Generating SHAP results..."):
+                        # Load background images for SHAP (sample from training data)
+                        background_dir = "audio_files/specs"
+                        background_images = load_background_spectrograms(folder=background_dir, max_images=20)
+                        
+                        if len(background_images) == 0:
+                            st.warning("No background images found. Using spectrogram as background.")
+                            background_images = [spec]
+                        
+                        fig_shap = SHAP().explain(
                             image=spec,
-                            class_idx=st.session_state.class_label
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            background_images=background_images,
+                            class_names=class_names_audio_deepfakes
                         )
-                        with st.expander("Gradient Explanation Results"):
-                            st.pyplot(fig_shap)
-                    except Exception as e:
-                        st.error(f"Explanation Error: {str(e)[:100]}")
+                        with st.expander("SHAP Results"):
+                            st.pyplot(fig_shap, width='content')
 
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")

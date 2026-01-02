@@ -110,17 +110,8 @@ class GradCAM:
 class SHAP:
     def explain(self, image, model, class_idx, background_images, class_names=None, max_background=20):
         """
-        Fixed SHAP implementation that handles dependency issues and model format compatibility.
-        Falls back to GradientExplainer if SHAP is not available.
+        SHAP implementation using GradientExplainer.
         """
-        try:
-            # Try to import SHAP
-            import shap
-            shap_available = True
-        except ImportError:
-            print("SHAP not available, falling back to gradient-based explanation")
-            shap_available = False
-        
         img = img_to_array(image) / 255.0
         img = np.expand_dims(img, axis=0)
 
@@ -137,73 +128,50 @@ class SHAP:
             bg = np.expand_dims(bg, axis=0)
 
         # Handle different model output formats
-        def create_logit_model(base_model):
-            """Create a logit model that handles both tensor and dict outputs"""
-            try:
-                # Try direct model creation
-                logit_model = tf.keras.Model(
-                    inputs=base_model.input,
-                    outputs=base_model.layers[-2].output
-                )
-                return logit_model
-            except Exception:
-                # Fallback for TFSMLayer models
-                def logit_wrapper(x):
+        def create_wrapper_model(base_model):
+            """Create a Keras model wrapper that handles TFSMLayer and dict outputs"""
+            # Check if it's a TFSMLayer
+            if isinstance(base_model, tf.keras.layers.TFSMLayer):
+                # Create a proper Keras model that wraps the TFSMLayer
+                input_layer = tf.keras.Input(shape=(224, 224, 3))
+                
+                # Define the output processing
+                def call_model(x):
                     preds = base_model(x)
                     if isinstance(preds, dict):
                         return list(preds.values())[0]
                     return preds
-                return logit_wrapper
-
-        logit_model = create_logit_model(model)
-
-        if shap_available:
-            try:
-                # Use SHAP if available
-                explainer = shap.GradientExplainer(logit_model, bg)
-                print("Computing SHAP values...")
-                shap_values = explainer.shap_values(img)
                 
-                # Process SHAP values
-                if isinstance(shap_values, list) and len(shap_values) > class_idx:
-                    shap_map = shap_values[class_idx][0]
-                else:
-                    shap_map = shap_values[0]
-                    
-                shap_map = np.mean(shap_map, axis=-1)
-                shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
-                method_name = "SHAP"
-                
-            except Exception as e:
-                print(f"SHAP failed: {e}, falling back to gradient explanation")
-                shap_available = False
+                output = tf.keras.layers.Lambda(call_model)(input_layer)
+                wrapper_model = tf.keras.Model(inputs=input_layer, outputs=output)
+                return wrapper_model
+            else:
+                # Regular Keras model - try to get logits
+                try:
+                    logit_model = tf.keras.Model(
+                        inputs=base_model.input,
+                        outputs=base_model.layers[-2].output
+                    )
+                    return logit_model
+                except Exception:
+                    # Return the model as-is if we can't extract logits
+                    return base_model
+
+        logit_model = create_wrapper_model(model)
+
+        # Use SHAP GradientExplainer
+        explainer = shap.GradientExplainer(logit_model, bg)
+        print("Computing SHAP values...")
+        shap_values = explainer.shap_values(img)
         
-        if not shap_available:
-            # Fallback to gradient-based explanation
-            img_tensor = tf.convert_to_tensor(img, dtype=tf.float32)
+        # Process SHAP values
+        if isinstance(shap_values, list) and len(shap_values) > class_idx:
+            shap_map = shap_values[class_idx][0]
+        else:
+            shap_map = shap_values[0]
             
-            with tf.GradientTape() as tape:
-                tape.watch(img_tensor)
-                predictions = model(img_tensor)
-                
-                # Handle different output formats
-                if isinstance(predictions, dict):
-                    output_key = list(predictions.keys())[0]
-                    predictions = predictions[output_key]
-                
-                class_score = predictions[:, class_idx]
-            
-            # Compute gradients
-            gradients = tape.gradient(class_score, img_tensor)
-            gradients = gradients.numpy()[0]
-            
-            # Process gradients
-            grad_abs = np.abs(gradients)
-            if len(grad_abs.shape) == 3:
-                grad_abs = np.mean(grad_abs, axis=-1)
-            
-            shap_map = (grad_abs - grad_abs.min()) / (grad_abs.max() - grad_abs.min() + 1e-8)
-            method_name = "Gradient-Based (SHAP Fallback)"
+        shap_map = np.mean(shap_map, axis=-1)
+        shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
 
         class_label = (
             class_names[class_idx]
@@ -217,7 +185,7 @@ class SHAP:
         axs[0].set_title("Original image")
 
         axs[1].imshow(shap_map)
-        axs[1].set_title(f"{method_name} - Predicted class: {class_label}")
+        axs[1].set_title(f"SHAP - Predicted class: {class_label}")
         plt.tight_layout()
 
         return fig
