@@ -15,7 +15,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from XAI_models.xai_models import Lime, GradCAM, SHAP
+from XAI_models.xai_models import Lime, GradCAM, SHAP_Gradient, SHAP_Kernel, SHAP_DEEP_EXPLAINER
 from Inference.inference import predict_image
 
 ALLOWED_FILE_TYPES = {
@@ -33,10 +33,11 @@ class_names_audio_deepfakes = ['real','fake']
 
 # Available models
 AVAILABLE_MODELS = {
-    "MobileNet": "Streamlit/saved_model/model",
-    # Add more models here as needed
-    # "InceptionV3": "Streamlit/saved_model/inception_model",
-    # "VGG16": "Streamlit/saved_model/vgg16_model",
+    # "MobileNet": "Streamlit/saved_model/model",
+    "MobileNet": "Streamlit/saved_models/MobileNet_audio_classifier.h5",
+    "InceptionV3": "Streamlit/saved_models/InceptionV3_audio_classifier.h5",
+    "VGG16": "Streamlit/saved_models/VGG16_audio_classifier.h5",
+    "ResNet50": "Streamlit/saved_models/ResNet50_audio_classifier.h5"
 }
 
 if "prediction_done" not in st.session_state:
@@ -106,7 +107,7 @@ def create_spectrogram(sound):
     plt.savefig(spec_path)
     image_data = load_img(spec_path ,target_size=(224,224))
     st.image(image_data)
-    return(image_data)
+    return image_data
 
 def load_background_spectrograms(folder="audio_files/specs", max_images=20):
     images = []
@@ -181,7 +182,7 @@ def audio_pipeline():
         if not uploaded_file:
             # Clean up old file if user removed it
             if st.session_state.get("last_file"):
-                cleanup_old_files(st.session_state.last_file)
+                # cleanup_old_files(st.session_state.last_file)
                 st.session_state.last_file = None
                 st.session_state.prediction_done = False
             st.info("Please upload a file to begin.")
@@ -198,8 +199,8 @@ def audio_pipeline():
         if uploaded_file is not None:
             if st.session_state.get("last_file") != uploaded_file.name:
                 # Clean up old file when a new file is uploaded
-                if st.session_state.get("last_file"):
-                    cleanup_old_files(st.session_state.last_file)
+                # if st.session_state.get("last_file"):
+                #     cleanup_old_files(st.session_state.last_file)
                 st.session_state.last_file = uploaded_file.name
                 st.session_state.prediction_done = False
 
@@ -210,12 +211,15 @@ def audio_pipeline():
             with st.spinner("Generating Spectrogram..."):
                 save_audio_file(uploaded_file)
                 spec = create_spectrogram(uploaded_file.name)
-                
+                print('ccccccccccccccccccc', spec.size)
             # Prediction
             if not st.session_state.prediction_done:
                 with st.spinner("Analyzing audio..."):
                     model_path = AVAILABLE_MODELS[st.session_state.selected_model]
-                    model = tf.keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
+                    if model_path.endswith('.h5'):
+                        model = tf.keras.models.load_model(model_path)
+                    else:
+                        model = tf.keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
                     output = predict_image(model, spec)
 
                     st.session_state.model = model
@@ -226,11 +230,16 @@ def audio_pipeline():
 
             class_label = st.session_state.class_label
             prediction = st.session_state.prediction
-            confidence = float(prediction[0][class_label])
-
-            if class_names_audio_deepfakes[class_label] == "fake":
+            
+            # For sigmoid output: prediction[0][0] is probability of "fake"
+            fake_probability = float(prediction[0][0])
+            print(f"Fake probability: {fake_probability}")
+            print(f"Class label: {class_label}")
+            if class_label == 1:  # fake
+                confidence = fake_probability
                 st.error("The audio is **Fake**")
-            else:
+            else:  # real
+                confidence = 1 - fake_probability
                 st.success("The audio is **Real**")
 
             st.progress(confidence)
@@ -241,17 +250,20 @@ def audio_pipeline():
         st.markdown("## Explainability")
 
         st.markdown("**Select XAI methods:**")
-        col_lime, col_gradcam, col_shap = st.columns(3, width=500, border=True)
+        col_lime, col_gradcam, col_shap, col_shap_kernel, col_shap_deep = st.columns(5, width=500, border=True)
         
         with col_lime:
             use_lime = st.checkbox("LIME", value=True)
         with col_gradcam:
             use_gradcam = st.checkbox("Grad-CAM", value=False)
         with col_shap:
-            use_shap = st.checkbox("SHAP", value=False)
+            use_shap = st.checkbox("SHAP Gradient", value=False)
+        with col_shap_kernel:
+            use_shap_kernel = st.checkbox("SHAP Kernel", value=False)
+        with col_shap_deep:
+            use_shap_deep = st.checkbox("SHAP Deep", value=False)
 
-
-        if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
+        if (use_lime or use_gradcam or use_shap or use_shap_kernel or use_shap_deep) and st.button("Run Explainability"):
 
             if use_lime:
                 st.markdown("### LIME Explanation")
@@ -284,25 +296,67 @@ def audio_pipeline():
                         st.error(f"⚠️ Grad-CAM Error: {str(e)[:100]}")
 
             if use_shap:
-                st.markdown("### SHAP Explanation")
-                with st.spinner("Generating SHAP results..."):
+                st.markdown("### SHAP Gradient Explanation")
+                with st.spinner("Generating SHAP Gradient results..."):
                         # Load background images for SHAP (sample from training data)
                         background_dir = "audio_files/specs"
-                        background_images = load_background_spectrograms(folder=background_dir, max_images=20)
+                        background_images = load_background_spectrograms(folder=background_dir, max_images=10)
                         
                         if len(background_images) == 0:
                             st.warning("No background images found. Using spectrogram as background.")
                             background_images = [spec]
                         
-                        fig_shap = SHAP().explain(
+                        fig_shap = SHAP_Gradient().explain(
                             image=spec,
                             model=st.session_state.model,
                             class_idx=st.session_state.class_label,
                             background_images=background_images,
                             class_names=class_names_audio_deepfakes
                         )
-                        with st.expander("SHAP Results"):
+                        with st.expander("SHAP Gradient Results"):
                             st.pyplot(fig_shap, width='content')
+
+            if use_shap_kernel:
+                st.markdown("### SHAP Kernel Explanation")
+                with st.spinner("Generating SHAP Kernel results (this may take longer)..."):
+                        # Load background images for SHAP (sample from training data)
+                        background_dir = "audio_files/specs"
+                        background_images = load_background_spectrograms(folder=background_dir, max_images=10)
+                        
+                        if len(background_images) == 0:
+                            st.warning("No background images found. Using spectrogram as background.")
+                            background_images = [spec]
+                        
+                        fig_shap_kernel = SHAP_Kernel().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            background_images=background_images,
+                            class_names=class_names_audio_deepfakes,
+                            max_background=10,
+                            nsamples=100
+                        )
+                        with st.expander("SHAP Kernel Results"):
+                            st.pyplot(fig_shap_kernel, width='content')
+            if use_shap_deep:
+                st.markdown("### SHAP Deep Explanation")
+                with st.spinner("Generating SHAP Deep results..."):
+                        # Load background images for SHAP (sample from training data)
+                        background_dir = "audio_files/specs"
+                        background_images = load_background_spectrograms(folder=background_dir, max_images=10)
+                        
+                        if len(background_images) == 0:
+                            st.warning("No background images found. Using spectrogram as background.")
+                            background_images = [spec]
+                        
+                        fig_shap_deep = SHAP_DEEP_EXPLAINER().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label
+                        )
+                        with st.expander("SHAP Deep Results"):
+                            st.pyplot(fig_shap_deep, width='content')
+            
 
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
