@@ -10,7 +10,7 @@
 ---
 
 ## Project Overview
-This project aims to give users acces to a unified Explainable (XAI) interface, allowing them to classify audio and image files with Deep Learning models but most importantly, analyze the results via XAI techniques to gain insights into the model's decisions.
+This project aims to give users access to a unified Explainable (XAI) interface, allowing them to classify audio and image files with Deep Learning models but most importantly, analyze the results via XAI techniques to gain insights into the model's decisions.
 
 The platform gives the possibility for users to either detect **audio deepfakes** or **detect lung cancer**:
 - **Audio Deepfake Detection**: detects if an audio is real or not, using models like VGG16, MobileNet, ResNet and a custom CNN model. Audio files are first processed into spectrograms for a better performance.
