@@ -190,3 +190,116 @@ class SHAP:
 
         return fig
 
+
+class OcclusionSensitivity:
+    def explain(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
+        img = np.array(image) / 255.0
+        h, w, c = img.shape
+
+        # Prediction wrapper
+        def predict_fn(x):
+            if isinstance(model, tf.keras.layers.TFSMLayer):
+                preds = list(model(x).values())[0].numpy()
+            else:
+                preds = model.predict(x)
+            return preds
+
+        # Original prediction
+        original_pred = predict_fn(img[np.newaxis, ...])[0, class_idx]
+
+        heatmap = np.zeros((h, w))
+
+        for y in range(0, h - patch_size, stride):
+            for x in range(0, w - patch_size, stride):
+                occluded = img.copy()
+                occluded[y:y+patch_size, x:x+patch_size, :] = occlusion_value
+
+                pred = predict_fn(occluded[np.newaxis, ...])[0, class_idx]
+                delta = original_pred - pred
+
+                heatmap[y:y+patch_size, x:x+patch_size] += delta
+
+        heatmap = np.maximum(heatmap, 0)
+        heatmap /= (heatmap.max() + 1e-8)
+        heatmap_smooth = cv2.GaussianBlur(heatmap, (15, 15), 0)
+
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+
+        axs[1].imshow(heatmap_smooth, cmap="jet")
+        axs[1].set_title(f"Occlusion – Predicted class: {class_label}")
+        axs[1].axis('off')
+
+        plt.tight_layout()
+        return fig
+
+class IntegratedGradients:
+    def explain(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
+        img = np.array(image) / 255.0
+        img = tf.convert_to_tensor(img, dtype=tf.float32)
+
+        if baseline is None:
+            baseline = tf.zeros_like(img)
+        else:
+            baseline = tf.convert_to_tensor(baseline, dtype=tf.float32)
+
+        img = tf.expand_dims(img, axis=0)
+        baseline = tf.expand_dims(baseline, axis=0)
+
+        alphas = tf.linspace(0.0, 1.0, steps)
+
+        def predict(x):
+            if isinstance(model, tf.keras.layers.TFSMLayer):
+                return list(model(x).values())[0]
+            return model(x)
+
+        integrated_grads = tf.zeros_like(img)
+
+        for alpha in alphas:
+            interpolated = baseline + alpha * (img - baseline)
+
+            with tf.GradientTape() as tape:
+                tape.watch(interpolated)
+                preds = predict(interpolated)
+                target = preds[:, class_idx]
+
+            grads = tape.gradient(target, interpolated)
+            integrated_grads += grads
+
+        integrated_grads /= steps
+        attributions = (img - baseline) * integrated_grads
+        attributions = tf.reduce_mean(attributions, axis=-1)[0].numpy()
+
+        attributions = np.maximum(attributions, 0)
+        attributions /= (attributions.max() + 1e-8)
+
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+
+        axs[1].imshow(np.zeros_like(attributions), cmap='gray')
+        axs[1].imshow(attributions, cmap="jet", vmin=0, vmax=1)
+        axs[1].set_title(f"Integrated Gradients – Predicted class: {class_label}")
+        axs[1].axis('off')
+
+        plt.tight_layout()
+        return fig
+
+

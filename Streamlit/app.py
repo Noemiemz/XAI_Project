@@ -15,7 +15,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from XAI_models.xai_models import Lime, GradCAM, SHAP
+from XAI_models.xai_models import Lime, GradCAM, SHAP, OcclusionSensitivity, IntegratedGradients
 from Inference.inference import predict_image
 
 ALLOWED_FILE_TYPES = {
@@ -241,7 +241,7 @@ def audio_pipeline():
         st.markdown("## Explainability")
 
         st.markdown("**Select XAI methods:**")
-        col_lime, col_gradcam, col_shap = st.columns(3, width=500, border=True)
+        col_lime, col_gradcam, col_shap, col_occ, col_ig = st.columns(5, width=500, border=True)
         
         with col_lime:
             use_lime = st.checkbox("LIME", value=True)
@@ -249,9 +249,13 @@ def audio_pipeline():
             use_gradcam = st.checkbox("Grad-CAM", value=False)
         with col_shap:
             use_shap = st.checkbox("SHAP", value=False)
+        with col_occ:
+            use_occ = st.checkbox("Occlusion", value=False)
+        with col_ig:
+            use_ig = st.checkbox("Integrated Gradients", value=False)
 
 
-        if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
+        if (use_lime or use_gradcam or use_shap or use_occ or use_ig) and st.button("Run Explainability"):
 
             if use_lime:
                 st.markdown("### LIME Explanation")
@@ -303,6 +307,28 @@ def audio_pipeline():
                         )
                         with st.expander("SHAP Results"):
                             st.pyplot(fig_shap, width='content')
+
+            if use_occ:
+                st.markdown("### Occlusion Sensitivity")
+                fig_occ = OcclusionSensitivity().explain(
+                    image=spec,
+                    model=st.session_state.model,
+                    class_idx=st.session_state.class_label,
+                    class_names=class_names_audio_deepfakes,
+                    patch_size=32, 
+                    stride=16
+                )
+                st.pyplot(fig_occ)
+
+            if use_ig:
+                st.markdown("### Integrated Gradients")
+                fig_ig = IntegratedGradients().explain(
+                    image=spec,
+                    model=st.session_state.model,
+                    class_idx=st.session_state.class_label,
+                    class_names=class_names_audio_deepfakes
+                )
+                st.pyplot(fig_ig)
 
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
