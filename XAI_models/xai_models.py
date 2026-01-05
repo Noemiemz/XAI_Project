@@ -65,8 +65,16 @@ class GradCAM:
         x = np.expand_dims(img_array,axis=0)
         x = tf.keras.applications.vgg16.preprocess_input(x)
 
-        model = tf.keras.applications.VGG16(weights='imagenet', include_top=True)
-        last_conv_layer = model.get_layer('block5_conv3')
+        # Find the last convolutional layer in the model
+        last_conv_layer = None
+        for layer in reversed(model.layers):
+            if 'conv' in layer.name.lower():
+                last_conv_layer = layer
+                break
+        
+        if last_conv_layer is None:
+            raise ValueError("Could not find a convolutional layer in the model")
+        
         grad_model = tf.keras.models.Model([model.inputs], [last_conv_layer.output, model.output])
 
         with tf.GradientTape() as tape:
@@ -106,202 +114,8 @@ class GradCAM:
         return(fig)
     
 
-class SHAP_Gradient:
-    def explain(self, image, model, class_idx, background_images, class_names=None, max_background=10):
-        """
-        SHAP implementation using GradientExplainer.
-        """
-        img = img_to_array(image) / 255.0
-        img = np.expand_dims(img, axis=0)
-
-        # Preparing the background
-        bg = []
-        for bg_img in background_images[:max_background]:
-            bg_arr = img_to_array(bg_img) / 255.0
-            bg.append(bg_arr)
-
-        bg = np.array(bg)
-        
-        # Ensure background has proper shape for GradientExplainer
-        # Should be (n_samples, height, width, channels)
-        if len(bg.shape) == 3:
-            bg = np.expand_dims(bg, axis=0)
-
-        # Handle different model output formats
-        def create_wrapper_model(base_model):
-            """Create a Keras model wrapper that handles TFSMLayer and dict outputs"""
-            # Get the input shape from the image
-            input_shape = img.shape[1:]  # (height, width, channels)
-            
-            # Check if it's a TFSMLayer
-            if isinstance(base_model, tf.keras.layers.TFSMLayer):
-                # Create a proper Keras model that wraps the TFSMLayer
-                input_layer = tf.keras.Input(shape=input_shape, dtype=tf.float32)
-                
-                # Define the output processing
-                def call_model(x):
-                    preds = base_model(x)
-                    if isinstance(preds, dict):
-                        return list(preds.values())[0]
-                    return preds
-                
-                output = tf.keras.layers.Lambda(call_model)(input_layer)
-                wrapper_model = tf.keras.Model(inputs=input_layer, outputs=output)
-                # Build the model with concrete input shape
-                wrapper_model.build(input_shape=(None,) + input_shape)
-                return wrapper_model
-            else:
-                # Regular Keras model - try to get logits
-                try:
-                    logit_model = tf.keras.Model(
-                        inputs=base_model.input,
-                        outputs=base_model.layers[-2].output
-                    )
-                    # Build the model with concrete input shape
-                    logit_model.build(input_shape=(None,) + input_shape)
-                    return logit_model
-                except Exception:
-                    # Return the model as-is if we can't extract logits
-                    return base_model
-
-        logit_model = create_wrapper_model(model)
-        
-        # Ensure data types match
-        img = img.astype(np.float32)
-        bg = bg.astype(np.float32)
-        
-        # Build the model explicitly with sample data to ensure concrete shapes
-        _ = logit_model(bg[:1])
-
-        # Use SHAP GradientExplainer with local smoothing disabled
-        explainer = shap.GradientExplainer(logit_model, bg, local_smoothing=0)
-        print("Computing SHAP values...")
-        shap_values = explainer.shap_values(img, nsamples=200)
-        
-        # Process SHAP values
-        if isinstance(shap_values, list) and len(shap_values) > class_idx:
-            shap_map = shap_values[class_idx][0]
-        else:
-            shap_map = shap_values[0]
-            
-        shap_map = np.mean(shap_map, axis=-1)
-        shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
-
-        class_label = (
-            class_names[class_idx]
-            if class_names and class_idx < len(class_names)
-            else f"class {class_idx}"
-        )
-
-        # Create visualization
-        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image)
-        axs[0].set_title("Original image")
-
-        axs[1].imshow(shap_map)
-        axs[1].set_title(f"SHAP - Predicted class: {class_label}")
-        plt.tight_layout()
-
-        return fig
-
-
-class SHAP_Kernel:
-    def explain(self, image, model, class_idx, background_images, class_names=None, max_background=10, nsamples=100):
-        """
-        SHAP implementation using KernelExplainer (model-agnostic).
-        
-        Args:
-            image: Input image to explain
-            model: Keras model or TFSMLayer
-            class_idx: Index of the class to explain
-            background_images: List of background images for baseline
-            class_names: Optional list of class names
-            max_background: Maximum number of background images to use
-            nsamples: Number of samples for KernelExplainer (higher = more accurate but slower)
-        """
-        # Prepare input image
-        img = img_to_array(image) / 255.0
-        img = np.expand_dims(img, axis=0)
-
-        # Prepare background dataset
-        bg = []
-        for bg_img in background_images[:max_background]:
-            bg_arr = img_to_array(bg_img) / 255.0
-            bg.append(bg_arr)
-
-        bg = np.array(bg)
-
-        # Flatten images for KernelExplainer (it works with tabular data)
-        img_shape = img.shape
-        img_flat = img.reshape(1, -1)
-        bg_flat = bg.reshape(bg.shape[0], -1)
-
-        # Create prediction function wrapper
-        def predict_fn(x):
-            x_reshaped = x.reshape(-1, img_shape[1], img_shape[2], img_shape[3])
-            if isinstance(model, tf.keras.layers.TFSMLayer):
-                preds_dict = model(x_reshaped)
-                preds = tf.nn.softmax(list(preds_dict.values())[0]).numpy()
-            else:
-                preds = tf.nn.softmax(model.predict(x_reshaped, verbose=0)).numpy()
-            return preds
-
-        # Create KernelExplainer
-        print(f"Initializing SHAP KernelExplainer with {max_background} background samples...")
-        explainer = shap.KernelExplainer(predict_fn, bg_flat)
-        
-        # Compute SHAP values
-        print(f"Computing SHAP values with {nsamples} samples (this may take a moment)...")
-        shap_values = explainer.shap_values(img_flat, nsamples=nsamples)
-        
-
-        shap_map = shap_values[class_idx][:, 0]
-        
-        
-        shap_map = shap_map.reshape(img_shape[1], img_shape[2], img_shape[3])
-        
-        # Average across color channels
-        shap_map = np.mean(shap_map, axis=-1)
-        
-        print("SHAP map range:", shap_map.min(), shap_map.max())
-        
-        # Normalize for visualization
-        shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
-        # shap_map = np.abs(shap_map)
-        
-        class_label = (
-            class_names[class_idx]
-            if class_names and class_idx < len(class_names)
-            else f"class {class_idx}"
-        )
-
-        # Create visualization
-        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image)
-        axs[0].set_title("Original image")
-
-        axs[1].imshow(shap_map, cmap='RdBu')
-        axs[1].set_title(f"SHAP Kernel - Predicted class: {class_label}")
-        plt.tight_layout()
-
-        return fig
-
-
-class SHAP_DEEP_EXPLAINER:
-    def explain(self, image, model, class_idx=None, background=None, num_samples=100):
-        """
-        Generate a SHAP explanation for a spectrogram/image using GradientExplainer (Keras-compatible).
-
-        Args:
-            image: Input spectrogram/image (np.array, HxW or CxHxW).
-            model: Keras model (must output logits).
-            class_idx: Target class index. If None, explains the predicted class.
-            background: Background dataset for SHAP (np.array, NxHxWxC or NxCxHxW).
-            num_samples: Number of samples for SHAP approximation.
-        Returns:
-            matplotlib.figure.Figure: Figure with original and explanation.
-        """
-        
+class SHAP_GRADIENT:
+    def explain(self, image, model, class_idx, background=None, num_samples=100):
         image = np.array(image, dtype=np.float32)
         
         # Preprocess image
@@ -310,22 +124,50 @@ class SHAP_DEEP_EXPLAINER:
         elif image.ndim == 3:
             image = np.expand_dims(image, axis=0)  # Add batch dim
 
-        # Wrap model for SHAP
-        def predict_fn(x):
-            return model(x)
-
-        # Initialize explainer
+        # create a fixed model to fix input shape issues
+        input_shape = image.shape[1:]  # (height, width, channels)
+        input_layer = tf.keras.Input(shape=input_shape, dtype=tf.float32)
+        output = model(input_layer)
+        fixed_model = tf.keras.Model(inputs=input_layer, outputs=output)
+        _ = fixed_model(image)
+        
         if background is None:
-            background = image  # Use input as background if none provided
-        explainer = shap.GradientExplainer(predict_fn, background)
+            print("\n3. Creating background dataset...")
+            num_background = 5
+            background_images = []
+            
+            for _ in range(num_background):
+                noisy_image = image + np.random.randn(*image.shape) * 0.1
+                noisy_image = np.clip(noisy_image, 0, 1)
+                if image.ndim == 2:
+                    background_images.append(np.expand_dims(noisy_image, axis=-1))
+                else:
+                    background_images.append(noisy_image)
+            
+            background = np.array(background_images)
+            print(f"   [OK] Background dataset created with shape: {background.shape}")
 
-        # Compute SHAP values
-        shap_values = explainer.shap_values(image, ranked_outputs=num_samples)
-
-        # Select class (predicted if not specified)
-        if class_idx is None:
-            logits = model.predict(image)
-            class_idx = np.argmax(logits)
+        background = np.array(background, dtype=np.float32)
+        
+        # Ensure background has the right shape
+        if background.ndim == 3:
+            background = np.expand_dims(background, axis=0)
+        
+        
+        explainer = shap.GradientExplainer(fixed_model, background)
+        
+        # Try different parameter combinations
+        try:
+            shap_values = explainer.shap_values(image)
+        except TypeError as e:
+            print("ERROOORRRRR, \nCaught TypeError, trying with nsamples parameter:", e)
+            if "ranked_outputs" in str(e):
+                shap_values = explainer.shap_values(image, nsamples=num_samples)
+            else:
+                raise e
+        
+        # Ensure class_idx is within bounds
+        class_idx = min(class_idx, len(shap_values) - 1)
 
         # Plot
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
@@ -333,8 +175,20 @@ class SHAP_DEEP_EXPLAINER:
         axs[0].set_title("Original")
         axs[0].axis('off')
 
-        shap.image_plot(shap_values[class_idx], image.squeeze(), show=False, ax=axs[1])
+        shap_map = shap_values[class_idx]
+        
+        if shap_map.ndim == 4:
+            shap_map = shap_map.squeeze(axis=-1)
+        
+        if shap_map.ndim == 3 and shap_map.shape[-1] == 3:
+            shap_map = np.mean(shap_map, axis=-1)
+        
+        # Normalize for visualization
+        shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
+        
+        axs[1].imshow(shap_map, cmap='RdBu')
         axs[1].set_title(f"SHAP - Class {class_idx}")
+        axs[1].axis('off')
         plt.tight_layout()
 
         return fig

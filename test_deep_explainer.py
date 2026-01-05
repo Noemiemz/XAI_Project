@@ -55,7 +55,7 @@ def create_spectrogram(sound):
     os.makedirs(spec_dir, exist_ok=True)
 
     base_name = os.path.splitext(sound)[0]
-    spec_path = os.path.join(spec_dir, f"{base_name}_spec.png")
+    spec_path = os.path.join(spec_dir, f"{base_name}_aaaaaaaaaaaaaaaaaa_spec.png")
 
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -85,11 +85,11 @@ def test_deep_explainer():
     
     try:
         model = load_model(model_path)
-        print(f"   ✓ Model loaded successfully from {model_path}")
+        print(f"   [OK] Model loaded successfully from {model_path}")
         print(f"   Model input shape: {model.input_shape}")
         print(f"   Model output shape: {model.output_shape}")
     except Exception as e:
-        print(f"   ✗ Error loading model: {e}")
+        print(f"   [ERROR] Error loading model: {e}")
         return
     
     # 2. Load sound and create spectrogram
@@ -98,26 +98,32 @@ def test_deep_explainer():
     try:
         sample_image = create_spectrogram(sound_file)
         sample_image = np.array(sample_image) / 255.0  # Normalize to [0, 1]
-        print(f"   ✓ Spectrogram created with shape: {sample_image.shape}")
+        # plt.imshow(sample_image)
+        # plt.axis('off')
+        print(f"   [OK] Spectrogram created with shape: {sample_image.shape}")
     except Exception as e:
-        print(f"   ✗ Error creating spectrogram: {e}")
+        print(f"   [ERROR] Error creating spectrogram: {e}")
         return
     
     # 3. Create background data (simplified - using the same image with noise)
-    print("\n3. Creating background dataset...")
-    num_background = 5
-    background_images = []
+    # print("\n3. Creating background dataset...")
+    # num_background = 5
+    # background_images = []
     
-    for i in range(num_background):
-        noisy_image = sample_image + np.random.randn(*sample_image.shape) * 0.1
-        noisy_image = np.clip(noisy_image, 0, 1)
-        if sample_image.ndim == 2:
-            background_images.append(np.expand_dims(noisy_image, axis=-1))
-        else:
-            background_images.append(noisy_image)
+    # for i in range(num_background):
+    #     noisy_image = sample_image + np.random.randn(*sample_image.shape) * 0.1
+    #     noisy_image = np.clip(noisy_image, 0, 1)
+    #     if sample_image.ndim == 2:
+    #         background_images.append(np.expand_dims(noisy_image, axis=-1))
+    #     else:
+    #         background_images.append(noisy_image)
     
-    background = np.array(background_images)
-    print(f"   ✓ Background dataset created with shape: {background.shape}")
+    # background = np.array(background_images)
+    
+    print("\n3. Loading background dataset from folder...")
+    background_images = load_background_spectrograms(folder="audio_files/specs", max_images=20)
+    background = np.array([np.array(img) / 255.0 for img in background_images]) 
+    print(f"   [OK] Background dataset created with shape: {background.shape}")
     
     # 4. Get model prediction
     print("\n4. Getting model prediction...")
@@ -126,14 +132,14 @@ def test_deep_explainer():
     predicted_class = np.argmax(predictions[0])
     confidence = predictions[0][predicted_class]
     
-    print(f"   ✓ Predicted class: {predicted_class}")
-    print(f"   ✓ Confidence: {confidence:.4f}")
+    print(f"   [OK] Predicted class: {predicted_class}")
+    print(f"   [OK] Confidence: {confidence:.4f}")
     print(f"   Predictions: {predictions[0]}")
     
     # 5. Initialize DeepExplainer
     print("\n5. Initializing SHAP DeepExplainer...")
     explainer = SHAP_DEEP_EXPLAINER()
-    print("   ✓ DeepExplainer initialized")
+    print("   [OK] DeepExplainer initialized")
     
     # 6. Generate explanation
     print("\n6. Generating SHAP explanation...")
@@ -147,24 +153,25 @@ def test_deep_explainer():
             background=background,
             num_samples=50  # Reduced for faster testing
         )
-        print("   ✓ Explanation generated successfully!")
+        print("   [OK] Explanation generated successfully!")
         
         # Save the figure
         output_path = "test_deep_explainer_output.png"
         fig.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"\n   ✓ Visualization saved to: {output_path}")
+        print(f"\n   [OK] Visualization saved to: {output_path}")
         
         # Show the plot
+        plt.title("SHAP DeepExplainer Explanation")
         plt.show()
         
     except Exception as e:
-        print(f"   ✗ Error generating explanation: {e}")
+        print(f"   [ERROR] Error generating explanation: {e}")
         import traceback
         traceback.print_exc()
         return
     
     print("\n" + "=" * 60)
-    print("Test completed successfully! ✓")
+    print("Test completed successfully! [OK]")
     print("=" * 60)
 
 
