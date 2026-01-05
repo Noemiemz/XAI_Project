@@ -5,6 +5,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from pyparsing import col
 import streamlit as st
 import numpy as np
 import librosa
@@ -15,7 +16,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from XAI_models.xai_models import Lime, GradCAM, SHAP_GRADIENT
+from XAI_models.xai_models import Lime, GradCAM, SHAP_GRADIENT, OcclusionSensitivity, IntegratedGradients
 from Inference.inference import predict_image
 
 ALLOWED_FILE_TYPES = {
@@ -217,7 +218,6 @@ def audio_pipeline():
             with st.spinner("Generating Spectrogram..."):
                 save_audio_file(uploaded_file)
                 spec = create_spectrogram(uploaded_file.name)
-                print('ccccccccccccccccccc', spec.size)
             # Prediction
             if not st.session_state.prediction_done:
                 with st.spinner("Analyzing audio..."):
@@ -240,7 +240,6 @@ def audio_pipeline():
             # For sigmoid output: prediction[0][0] is probability of "fake"
             fake_probability = float(prediction[0][0])
             print(f"Fake probability: {fake_probability}")
-            print(f"Class label: {class_label}")
             if class_label == 1:  # fake
                 confidence = fake_probability
                 st.error("The audio is **Fake**")
@@ -256,7 +255,7 @@ def audio_pipeline():
         st.markdown("## Explainability")
 
         st.markdown("**Select XAI methods:**")
-        col_lime, col_gradcam, col_shap = st.columns(3, width=500, border=True)
+        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad  = st.columns(5, width=500, border=True)
         
         with col_lime:
             use_lime = st.checkbox("LIME", value=True)
@@ -264,8 +263,12 @@ def audio_pipeline():
             use_gradcam = st.checkbox("Grad-CAM", value=False)
         with col_shap:
             use_shap = st.checkbox("SHAP Gradient", value=False)
+        with col_occlu:
+            use_occlu = st.checkbox("Occlusion Sensitivity", value=False)
+        with col_int_grad:
+            use_int_grad = st.checkbox("Integrated Gradients", value=False)
         
-        if (use_lime or use_gradcam or use_shap or use_shap_kernel or use_shap_deep) and st.button("Run Explainability"):
+        if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
 
             if use_lime:
                 st.markdown("### LIME Explanation")
@@ -317,8 +320,43 @@ def audio_pipeline():
                         )
                         with st.expander("SHAP Gradient Results"):
                             st.pyplot(fig_shap, width='content')
-
-
+            
+            if use_occlu:
+                st.markdown("### Occlusion Sensitivity Explanation")
+                with st.spinner("Generating Occlusion Sensitivity results..."):
+                    try:
+                        fig_occlu = OcclusionSensitivity().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            class_names=class_names_audio_deepfakes,
+                            patch_size=30,
+                            stride=15,
+                            occlusion_value=0
+                        )
+                        with st.expander("Occlusion Sensitivity Results"):
+                            st.pyplot(fig_occlu, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ Occlusion Sensitivity Error: {str(e)}")
+            
+            if use_int_grad:
+                st.markdown("### Integrated Gradients Explanation")
+                with st.spinner("Generating Integrated Gradients results..."):
+                    try:
+                        fig_int_grad = IntegratedGradients().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            class_names=class_names_audio_deepfakes,
+                            baseline=None,
+                            steps=50
+                        )
+                        with st.expander("Integrated Gradients Results"):
+                            st.pyplot(fig_int_grad, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ Integrated Gradients Error: {str(e)}")
+                        
+    
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
     st.markdown("Upload an x-ray image for lung cancer analysis and understand the model's decision with Explainability AI (XAI).")
