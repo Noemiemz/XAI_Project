@@ -863,3 +863,184 @@ class IntegratedGradients:
         
         plt.tight_layout()
         return fig
+
+class SHAPKernelExplainer:
+    """
+    SHAP Explainer class that works with both PyTorch and Keras models.
+    Uses shap.Explainer with image maskers for better image-specific explanations.
+    """
+    
+    def explain(self, image, model, class_idx, class_names=None, max_evals=1000):
+        """
+        Generate SHAP explanation for an image using SHAP Explainer with image maskers.
+        
+        Args:
+            image: PIL Image or numpy array to explain
+            model: Keras or PyTorch model
+            class_idx: Index of the class to explain
+            class_names: Optional list of class names
+            max_evals: Maximum number of evaluations for SHAP (default: 1000)
+            
+        Returns:
+            matplotlib Figure with original image and SHAP explanation
+        """
+        # Check if this is a PyTorch model
+        if isinstance(model, torch.nn.Module):
+            return self._explain_pytorch(image, model, class_idx, class_names, max_evals)
+        else:
+            # TensorFlow/Keras model
+            return self._explain_keras(image, model, class_idx, class_names, max_evals)
+    
+    def _explain_keras(self, image, model, class_idx, class_names=None, max_evals=1000):
+        """SHAP Explainer for Keras models using image masker"""
+        # Convert image to numpy array
+        img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure proper dimensions
+        if img_array.ndim == 2:
+            img_array = np.expand_dims(img_array, axis=-1)  # Add channel dim
+        
+        # Create prediction function
+        def predict_fn(images):
+            """Prediction function for SHAP"""
+            images = np.array(images)
+            if images.ndim == 3:
+                images = np.expand_dims(images, axis=0)
+            
+            # Make predictions
+            if isinstance(model, tf.keras.layers.TFSMLayer):
+                preds_dict = model(images)
+                preds = list(preds_dict.values())[0].numpy()
+            else:
+                preds = model.predict(images, verbose=0)
+            
+            return preds
+        
+        # Create masker and explainer
+        masker = shap.maskers.Image("inpaint_ns", img_array.shape)
+        explainer = shap.Explainer(predict_fn, masker)
+        
+        # Calculate SHAP values
+        print(f"Computing SHAP values with max_evals={max_evals}...")
+        shap_values = explainer(np.expand_dims(img_array, axis=0), max_evals=max_evals)
+        
+        # Extract SHAP values for the target class
+        if hasattr(shap_values, 'values'):
+            # shap_values is an Explanation object
+            shap_map = shap_values.values[0, :, :, :, class_idx]
+        else:
+            # Handle different formats
+            if isinstance(shap_values, list):
+                shap_map = shap_values[class_idx][0]
+            else:
+                shap_map = shap_values[0, :, :, :, class_idx]
+        
+        # For multi-channel images, average across channels
+        if shap_map.ndim == 3 and shap_map.shape[-1] > 1:
+            shap_map = np.mean(np.abs(shap_map), axis=-1)
+        else:
+            shap_map = np.abs(shap_map.squeeze())
+        
+        # Normalize for visualization
+        shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
+        
+        # Get class label
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        # Create visualization
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image, cmap='gray')
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+        
+        axs[1].imshow(shap_map, cmap='jet')
+        axs[1].set_title(f"SHAP - Predicted class: {class_label}")
+        axs[1].axis('off')
+        plt.tight_layout()
+        
+        return fig
+    
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, max_evals=1000):
+        """SHAP Explainer for PyTorch models using image masker"""
+        device = next(model.parameters()).device
+        
+        # Convert PIL Image to numpy array (normalized to 0-1)
+        img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels
+        if img_array.ndim == 2:
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:  # RGBA
+            img_array = img_array[:, :, :3]
+        
+        # Create prediction function for PyTorch model
+        def predict_fn(images):
+            """Prediction function for SHAP"""
+            images = np.array(images)
+            if images.ndim == 3:
+                images = np.expand_dims(images, axis=0)  # Add batch dimension if missing
+            if images.shape[-1] == 3:
+                images = torch.from_numpy(images).float().to(device)
+                images = images.permute(0, 3, 1, 2)  # BHWC -> BCHW
+            else:
+                images = torch.from_numpy(images).float().to(device)
+            
+            # Make predictions with softmax
+            model.eval()
+            with torch.no_grad():
+                output = model(images)
+                if isinstance(output, dict):
+                    output = list(output.values())[0]
+                return torch.softmax(output, dim=1).cpu().numpy()
+        
+        # Create masker and explainer
+        masker = shap.maskers.Image("inpaint_ns", img_array.shape)
+        explainer = shap.Explainer(predict_fn, masker)
+        
+        # Calculate SHAP values
+        print(f"Computing SHAP values with max_evals={max_evals}...")
+        shap_values = explainer(np.expand_dims(img_array, axis=0), max_evals=max_evals)
+        
+        # Extract SHAP values for the target class
+        if hasattr(shap_values, 'values'):
+            # shap_values is an Explanation object
+            shap_map = shap_values.values[0, :, :, :, class_idx]
+        else:
+            # Handle different formats
+            if isinstance(shap_values, list):
+                shap_map = shap_values[class_idx][0]
+            else:
+                shap_map = shap_values[0, :, :, :, class_idx]
+        
+        # For multi-channel images, average across channels
+        if shap_map.ndim == 3 and shap_map.shape[-1] > 1:
+            shap_map = np.mean(np.abs(shap_map), axis=-1)
+        else:
+            shap_map = np.abs(shap_map.squeeze())
+        
+        # Normalize for visualization
+        shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
+        
+        # Get class label
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        # Create visualization
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+        
+        axs[1].imshow(shap_map, cmap='jet')
+        axs[1].set_title(f"SHAP - Predicted class: {class_label}")
+        axs[1].axis('off')
+        plt.tight_layout()
+        
+        return fig
