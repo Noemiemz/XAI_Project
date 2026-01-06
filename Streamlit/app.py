@@ -28,8 +28,8 @@ ALLOWED_FILE_TYPES = {
 }
 
 st.set_page_config(
-    page_title="XAI Audio Detection",
-    page_icon="🐈",
+    page_title="XAI Platform",
+    page_icon="img/robot.gif",
     layout="wide"
 )
 
@@ -70,8 +70,16 @@ MODELS_TYPE = {
 
 if "prediction_done" not in st.session_state:
     st.session_state.prediction_done = False
-if "selected_model" not in st.session_state:
-    st.session_state.selected_model = list(AVAILABLE_MODELS_AUDIO.keys())[0]
+
+if "lung_prediction_done" not in st.session_state:
+    st.session_state.lung_prediction_done = False
+
+if "audio_selected_model" not in st.session_state:
+    st.session_state.audio_selected_model = list(AVAILABLE_MODELS_AUDIO.keys())[0]
+
+if "lung_selected_model" not in st.session_state:
+    st.session_state.lung_selected_model = list(AVAILABLE_MODELS_LUNG.keys())[0]
+
 
 def get_available_xai_methods(model_name):
     """Return list of XAI methods available for the selected model"""
@@ -167,6 +175,7 @@ def create_spectrogram(sound):
     plt.savefig(spec_path)
     image_data = load_img(spec_path ,target_size=(224,224))
     st.image(image_data)
+    st.caption("Mel-Spectrogram (used as CNN input)")
     return image_data
 
 
@@ -186,48 +195,123 @@ def load_background_spectrograms(folder="audio_files/specs", max_images=20):
 
 
 def main():
-    st.sidebar.title('XAI Platform')
-    pipeline = st.sidebar.radio ("What type of detection do you want to do ?:", ["Audio Deepfake Detection", "Lung Cancer Detection"])
-    
-    # Model selection (only for Audio Deepfake Detection)
-    if pipeline == "Audio Deepfake Detection":
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Model Selection")
-        selected_model = st.sidebar.selectbox(
-            "Choose a model:",
-            options=list(AVAILABLE_MODELS_AUDIO.keys()),
-            index=list(AVAILABLE_MODELS_AUDIO.keys()).index(st.session_state.selected_model)
-        )
-        
-        # Reset prediction if model changes
-        if selected_model != st.session_state.selected_model:
-            st.session_state.selected_model = selected_model
-            st.session_state.prediction_done = False
-    
-    if pipeline == "Audio Deepfake Detection":
-        audio_pipeline()
-    elif pipeline == "Lung Cancer Detection":
-        lung_cancer_pipeline()
-    else:
-        st.error("Unknown pipeline selected!")
+    st.title('Explainable AI Platform')
+    tab_audio_deepfake, tab_lung_cancer, tab_comparison, tab_about = st.tabs(
+        ["Audio Deepfake Detection", "Lung Cancer Detection", "Comparison", "About"]
+    )
 
-# def about():
-#     st.title("About present work")
-#     st.markdown("**Deepfake audio refers to synthetically created audio by digital or manual means. An emerging field, it is used to not only create legal digital hoaxes, but also fool humans into believing it is a human speaking to them. Through this project, we create our own deep faked audio using Generative Adversarial Neural Networks (GANs) and objectively evaluate generator quality using Fréchet Audio Distance (FAD) metric. We augment a pre-existing dataset of real audio samples with our fake generated samples and classify data as real or fake using MobileNet, Inception, VGG and custom CNN models. MobileNet is the best performing model with an accuracy of 91.5% and precision of 0.507. We further convert our black box deep learning models into white box models, by using explainable AI (XAI) models. We quantitatively evaluate the classification of a MEL Spectrogram through LIME, SHAP and GradCAM models. We compare the features of a spectrogram that an XAI model focuses on to provide a qualitative analysis of frequency distribution in spectrograms.**")
-#     st.markdown("**The goal of this project is to study features of audio and bridge the gap of explain ability in deep fake audio detection, through our novel system pipeline. The findings of this study are applicable to the fields of phishing audio calls and digital mimicry detection on video streaming platforms. The use of XAI will provide end-users a clear picture of frequencies in audio that are flagged as fake, enabling them to make better decisions in generation of fake samples through GANs.**")
+    with tab_audio_deepfake:
+        audio_pipeline()
+
+    with tab_lung_cancer:
+        lung_cancer_pipeline()
+
+    with tab_comparison:
+        st.header("Full Model and XAI Comparison")
+        st.markdown("""
+        This page allows you to **compare the outputs of all available models and XAI methods** 
+        on a single input. Upload an **audio file** or **X-ray image**, and you'll see a grid where:
+        
+        - **Columns** = different models  
+        - **Rows** = different XAI methods  
+        - Each cell = the explanation output for that model and XAI method
+        """)
+
+        st.divider()
+
+        col_upload, col_preview = st.columns([1, 1])
+
+        uploaded_file = None
+        file_category = None
+        preview_image = None
+
+        with col_upload:
+            uploaded_file = st.file_uploader(
+                "Choose a file for a full model and XAI comparison",
+                type=['png','jpg','jpeg','wav','mp3']
+            )
+
+        with col_preview:
+            if uploaded_file:
+                file_category = get_file_category(uploaded_file.name, ALLOWED_FILE_TYPES)
+
+                if file_category == "audio":
+                    st.markdown("### Spectrogram")
+                    spec_image = create_spectrogram(save_audio_file(uploaded_file))
+                    preview_image = spec_image
+                elif file_category == "image":
+                    image = Image.open(uploaded_file)
+                    st.markdown("### Chest X-ray")
+                    st.image(image, caption="Uploaded Image", use_column_width=True)
+                    preview_image = image
+                else:
+                    st.error("Unsupported file type for comparison")
+
+        if preview_image is not None:
+            comparison_tab(preview_image, task=file_category)
+
+    with tab_about:
+        about()
+
+
+def about():
+    st.title("About the Platform")
+    st.markdown("""
+    ## Overview
+    This **Explainable AI (XAI) interface** aims to analyze the results of deep learning
+    models applied to **audio** and **medical imaging** tasks.  
+    We want to **understand why models make their decisions** using
+    several different XAI techniques.
+    Explainability is essential to improve **transparency, trust, and interpretability** of the deep learning models
+    and this platform aims to make XAI techniques accessible through a user-friendly interface.
+    """)
+
+    st.divider()
+
+    st.markdown("""
+    ## Supported Tasks
+
+    ### Audio Deepfake Detection
+    - **Goal**: Classify audio as *real* or *fake*
+    - **Preprocessing**: Audio → Mel-spectrograms
+    - **Models**: MobileNet, VGG16, ResNet
+    - **XAI**: LIME, Grad-CAM, SHAP, Occlusion Sensitivity, Integrated Gradients
+
+    ### Lung Cancer Detection
+    - **Goal**: Detect *benign* vs *malignant* patterns in chest X-rays
+    - **Models**: AlexNet, DenseNet (fine-tuned)
+    - **XAI**: LIME, Grad-CAM, SHAP, Occlusion Sensitivity, Integrated Gradients
+    """)
+
+    st.divider()
+
+    st.markdown("""
+    ## Team
+    - Noémie MAZEPA
+    - Auriane MARCELINO
+    - Lorrain MORLET
+    """)
+
+
 
 def audio_pipeline():
-    # with st.expander("What does this app do?", expanded=True):
-    #     st.write(
-    #         """
-    #         This application detects **deepfake audio** using a deep learning model.
-    #         It then explains the prediction using **Explainable AI (XAI)** techniques
-    #         like **LIME** and **Grad-CAM**.
-    #         """
-    #     )
 
     st.title("Audio Deepfake Detection with XAI")
     st.markdown("Upload an audio file to detect if it's **real** or **fake** and understand the model's decision with Explainability AI (XAI).")
+
+    st.divider()
+
+    with st.expander("Model Settings", expanded=True):
+        selected_audio_model = st.selectbox(
+            "Choose a model to classify your audio:",
+            options=list(AVAILABLE_MODELS_AUDIO.keys()),
+            index=list(AVAILABLE_MODELS_AUDIO.keys()).index(st.session_state.audio_selected_model)
+        )
+        
+        # Reset prediction if model changes
+        if selected_audio_model != st.session_state.audio_selected_model:
+            st.session_state.audio_selected_model = selected_audio_model
+            st.session_state.prediction_done = False
 
     st.divider()
 
@@ -235,11 +319,12 @@ def audio_pipeline():
 
     with col1:
         st.markdown("### Upload Audio")
-        uploaded_file = st.file_uploader(
-            "Choose an audio file",
-            type=['wav','mp3'],
-            help="Only .wav and .mp3 files are supported"
-        )
+        with st.container(border=True):
+            uploaded_file = st.file_uploader(
+                "Choose an audio file",
+                type=['wav','mp3'],
+                help="Only .wav and .mp3 files are supported"
+            )
 
         if not uploaded_file:
             # Clean up old file if user removed it
@@ -276,7 +361,7 @@ def audio_pipeline():
             # Prediction
             if not st.session_state.prediction_done:
                 with st.spinner("Analyzing audio..."):
-                    model_path = AVAILABLE_MODELS_AUDIO[st.session_state.selected_model]
+                    model_path = AVAILABLE_MODELS_AUDIO[st.session_state.audio_selected_model]
                     if model_path.endswith('.h5'):
                         model = tf.keras.models.load_model(model_path)
                     else:
@@ -294,38 +379,57 @@ def audio_pipeline():
             
             # For sigmoid output: prediction[0][0] is probability of "fake"
             fake_probability = float(prediction[0][0])
-            print(f"Fake probability: {fake_probability}")
-            if class_label == 1:  # fake
-                confidence = fake_probability
-                st.error("The audio is **Fake**")
-            else:  # real
-                confidence = 1 - fake_probability
-                st.success("The audio is **Real**")
 
-            st.progress(confidence)
-            st.caption(f"Confidence: {confidence:.2%}")
+            st.subheader("Prediction Result")
+
+            col_a, col_b = st.columns([2, 1])
+
+            with col_a:
+                if class_label == 1:  # fake
+                    confidence = fake_probability
+                    st.error("The audio is **Fake**")
+                else:  # real
+                    confidence = 1 - fake_probability
+                    st.success("The audio is **Real**")
+            
+            with col_b:
+                st.metric(
+                    label="Confidence",
+                    value=f"{confidence:.1%}"
+                )
 
         # XAI
         st.divider()
+
+        if not st.session_state.prediction_done:
+            st.info("Run a prediction to enable Explainability.")
+            return
+        
         st.markdown("## Explainability")
 
-        st.markdown("**Select XAI methods:**")
-        available_methods = get_available_xai_methods(st.session_state.selected_model)
+        st.markdown("**Select the XAI methods you want to try:**")
+        available_methods = get_available_xai_methods(st.session_state.audio_selected_model)
         
-        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad  = st.columns(5, width=800, border=True)
+        methods = list(available_methods.keys())
+        cols = st.columns(len(methods), gap="small")
         
-        with col_lime:
-            use_lime = st.checkbox("LIME", value=True, disabled=not available_methods["LIME"])
-        with col_gradcam:
-            use_gradcam = st.checkbox("Grad-CAM", value=False, disabled=not available_methods["GradCAM"])
-        with col_shap:
-            use_shap = st.checkbox("SHAP Gradient", value=False, disabled=not available_methods["SHAP_GRADIENT"])
-        with col_occlu:
-            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, disabled=not available_methods["OcclusionSensitivity"])
-        with col_int_grad:
-            use_int_grad = st.checkbox("Integrated Gradients", value=False, disabled=not available_methods["IntegratedGradients"])
+        selected_xai = {}
+
+        for col, method in zip(cols, methods):
+            selected_xai[method] = col.checkbox(
+                method.replace("_", " "),
+                value=False,
+                disabled=not available_methods[method],
+                key=f"audio_xai_{method}" 
+            )
         
-        if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
+        use_lime = selected_xai.get("LIME", False)
+        use_gradcam = selected_xai.get("GradCAM", False)
+        use_shap = selected_xai.get("SHAP_GRADIENT", False)
+        use_occlu = selected_xai.get("OcclusionSensitivity", False)
+        use_int_grad = selected_xai.get("IntegratedGradients", False)
+        
+        if (selected_xai.values()) and st.button("Run Explainability"):
 
             if use_lime:
                 st.markdown("### LIME Explanation")
@@ -416,29 +520,35 @@ def audio_pipeline():
     
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
-    st.markdown("Upload an x-ray image for lung cancer analysis and understand the model's decision with Explainability AI (XAI).")
+    st.markdown("Upload a chest X-ray image for lung cancer analysis and understand the model's decision with Explainability AI (XAI).")
 
     st.divider()
 
-    # Model selection for Lung Cancer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Model Selection")
-    selected_lung_model = st.sidebar.selectbox(
-        "Choose a model:",
-        options=list(AVAILABLE_MODELS_LUNG.keys()),
-        key="lung_model_select"
-    )
+    with st.expander("Model Settings", expanded=True):
+        selected_lung_model = st.selectbox(
+            "Choose a model to classify chest X-ray image:",
+            options=list(AVAILABLE_MODELS_LUNG.keys()),
+            index=list(AVAILABLE_MODELS_LUNG.keys()).index(st.session_state.lung_selected_model)
+        )
+        
+        # Reset prediction if model changes
+        if selected_lung_model != st.session_state.lung_selected_model:
+            st.session_state.lung_selected_model = selected_lung_model
+            st.session_state.lung_prediction_done = False
+
+    st.divider()
 
     col1, col2 = st.columns([1, 1])
 
     with col1:
         st.markdown("### Upload Image")
-        uploaded_file = st.file_uploader(
-            "Choose an image file",
-            type=['png','jpg','jpeg'],
-            help="Only .png, .jpg and .jpeg files are supported",
-            key="lung_file_uploader"
-        )
+        with st.container(border=True):
+            uploaded_file = st.file_uploader(
+                "Choose an image file",
+                type=['png','jpg','jpeg'],
+                help="Only .png, .jpg and .jpeg files are supported",
+                key="lung_file_uploader"
+            )
 
         if not uploaded_file:
             st.info("Please upload a file to begin.")
@@ -449,19 +559,19 @@ def lung_cancer_pipeline():
                 st.error("This file type is not allowed. Please upload a .png, .jpg or .jpeg file.")
                 return
             
-            # Display the image
-            image = Image.open(uploaded_file)
-            st.image(image, width=400)
 
     if uploaded_file:
         with col2:
-            st.markdown("### Prediction")
+            # Display the image
+            st.markdown("### X-ray Image")
+            image = Image.open(uploaded_file)
+            st.image(image, width=400)
 
             # Prediction
             if not st.session_state.get("lung_prediction_done", False):
                 with st.spinner("Analyzing image..."):
                     device = "cuda" if torch.cuda.is_available() else "cpu"
-                    model_path = AVAILABLE_MODELS_LUNG[selected_lung_model]
+                    model_path = AVAILABLE_MODELS_LUNG[st.session_state.lung_selected_model]
                     
                     # Load PyTorch model
                     model = load_pytorch_model(model_path, device=device)
@@ -484,37 +594,56 @@ def lung_cancer_pipeline():
             benign_prob = float(prediction[0][0])
             malignant_prob = float(prediction[0][1])
             
-            if class_label == 1:  # malignant
-                confidence = malignant_prob
-                st.error("The image shows **Malignant** (Lung Cancer Detected)")
-            else:  # benign
-                confidence = benign_prob
-                st.success("The image shows **Benign** (No Cancer Detected)")
+            st.subheader("Prediction Result")
 
-            st.progress(confidence)
-            st.caption(f"Confidence: {confidence:.2%}")
+            col_a, col_b = st.columns([2, 1])
+
+            with col_a:
+                if class_label == 1:  # malignant
+                    confidence = malignant_prob
+                    st.error("The image shows **Malignant** (Lung Cancer Detected)")
+                else:  # benign
+                    confidence = benign_prob
+                    st.success("The image shows **Benign** (No Cancer Detected)")
+
+            with col_b:
+                st.metric(
+                    label="Confidence",
+                    value=f"{confidence:.1%}"
+                )
 
         # XAI
         st.divider()
+        if not st.session_state.lung_prediction_done:
+            st.info("Run a prediction to enable Explainability.")
+            return
+        
         st.markdown("## Explainability")
 
-        st.markdown("**Select XAI methods:**")
-        available_methods = get_available_xai_methods(selected_lung_model)
+        st.markdown("**Select the XAI methods you want to try:**")
+        available_methods = get_available_xai_methods(st.session_state.lung_selected_model)
+
+        methods = list(available_methods.keys())
+        cols = st.columns(len(methods), gap="small")
         
-        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad = st.columns(5, width=800, border=True)
+        selected_xai = {}
+
+        for col, method in zip(cols, methods):
+            selected_xai[method] = col.checkbox(
+                method.replace("_", " "),
+                value=False,
+                disabled=not available_methods[method],
+                key=f"lung_xai_{method}"
+            )
         
-        with col_lime:
-            use_lime = st.checkbox("LIME", value=False, disabled=not available_methods["LIME"], key="lung_lime")
-        with col_gradcam:
-            use_gradcam = st.checkbox("Grad-CAM", value=True, disabled=not available_methods["GradCAM"], key="lung_gradcam")
-        with col_shap:
-            use_shap = st.checkbox("SHAP Gradient", value=False, disabled=not available_methods["SHAP_GRADIENT"], key="lung_shap")
-        with col_occlu:
-            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, disabled=not available_methods["OcclusionSensitivity"], key="lung_occlu")
-        with col_int_grad:
-            use_int_grad = st.checkbox("Integrated Gradients", value=False, disabled=not available_methods["IntegratedGradients"], key="lung_int_grad")
-        
-        if (use_lime or use_gradcam or use_shap or use_occlu or use_int_grad) and st.button("Run Explainability", key="lung_xai_button"):
+        use_lime = selected_xai.get("LIME", False)
+        use_gradcam = selected_xai.get("GradCAM", False)
+        use_shap = selected_xai.get("SHAP_GRADIENT", False)
+        use_occlu = selected_xai.get("OcclusionSensitivity", False)
+        use_int_grad = selected_xai.get("IntegratedGradients", False)
+
+
+        if (selected_xai.values()) and st.button("Run Explainability", key="lung_xai_button"):
             
             # Convert PyTorch model to TensorFlow-compatible format for XAI methods
             # For now, we'll use LIME and GradCAM which can work with PyTorch
@@ -596,6 +725,85 @@ def lung_cancer_pipeline():
                             st.pyplot(fig_int_grad, width='content')
                     except Exception as e:
                         st.error(f"⚠️ Integrated Gradients Error: {str(e)}")
+
+
+
+def comparison_tab(input_image, task="lung"):
+
+    st.divider()
+    if task == "lung":
+        models_dict = AVAILABLE_MODELS_LUNG
+        class_names = class_names_lung_cancer
+    else:
+        models_dict = AVAILABLE_MODELS_AUDIO
+        class_names = class_names_audio_deepfakes
+
+    st.info("This will run all models and all available XAI methods on the input. Be patient!")
+
+    # Button to start
+    if st.button("Run Full Comparison"):
+        all_methods = set()
+        available_per_model = {}
+        for model_name in models_dict.keys():
+            available_methods = get_available_xai_methods(model_name)
+            available_per_model[model_name] = available_methods
+            all_methods.update([m for m, avail in available_methods.items() if avail])
+        all_methods = sorted(list(all_methods))
+
+        for method in all_methods:
+            st.subheader(method.replace("_", " "))
+            cols = st.columns(len(models_dict))
+            for i, (model_name, model_path) in enumerate(models_dict.items()):
+                available = available_per_model[model_name].get(method, False)
+                with cols[i]:
+                    st.caption(model_name)
+                    if available:
+                        # load model
+                        if task == "lung":
+                            device = "cuda" if torch.cuda.is_available() else "cpu"
+                            model = load_pytorch_model(model_path, device=device)
+                            fig = None
+                            try:
+                                if method == "LIME":
+                                    fig = Lime().explain(
+                                        image=input_image,
+                                        model=model,
+                                        class_idx=0,
+                                        class_names=class_names,
+                                        return_image_only=True
+                                    )
+                                elif method == "GradCAM":
+                                    fig = GradCAM().explain(
+                                        image=input_image,
+                                        model=model,
+                                        class_idx=0,
+                                        class_names=class_names,
+                                        return_image_only=True
+                                    )
+                                # other methods similarly...
+                                if fig is not None:
+                                    st.pyplot(fig)
+                            except Exception as e:
+                                st.error(f"{method} error on {model_name}: {str(e)[:100]}")
+                        else:  # audio
+                            model = tf.keras.models.load_model(model_path)
+                            fig = None
+                            try:
+                                if method == "LIME":
+                                    fig = Lime().explain(
+                                        image=input_image,
+                                        model=model,
+                                        class_idx=0,
+                                        class_names=class_names,
+                                        return_image_only=True
+                                    )
+                                # other methods...
+                                if fig is not None:
+                                    st.pyplot(fig)
+                            except Exception as e:
+                                st.error(f"{method} error on {model_name}: {str(e)[:100]}")
+                    else:
+                        st.info("Not available for this model")
 
 
 
