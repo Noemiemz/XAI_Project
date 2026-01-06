@@ -624,7 +624,7 @@ class OcclusionSensitivity:
         axs[0].set_title("Original image")
         axs[0].axis('off')
 
-        axs[1].imshow(img, cmap='gray')
+        axs[1].imshow(image, cmap='gray')
         axs[1].imshow(heatmap_smooth, cmap='jet', alpha=0.5)
         axs[1].set_title(f"Occlusion - Predicted class: {class_label}")
         axs[1].axis('off')
@@ -698,7 +698,7 @@ class OcclusionSensitivity:
         axs[0].set_title("Original image")
         axs[0].axis('off')
 
-        axs[1].imshow(img, cmap='gray')
+        axs[1].imshow(image, cmap='gray')
         axs[1].imshow(heatmap_smooth, cmap='jet', alpha=0.5)
         axs[1].set_title(f"Occlusion Sensitivity - Predicted class: {class_label}")
         axs[1].axis('off')

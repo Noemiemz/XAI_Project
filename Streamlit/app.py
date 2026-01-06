@@ -196,8 +196,8 @@ def load_background_spectrograms(folder="audio_files/specs", max_images=20):
 
 def main():
     st.title('Explainable AI Platform')
-    tab_audio_deepfake, tab_lung_cancer, tab_about = st.tabs(
-        ["Audio Deepfake Detection", "Lung Cancer Detection", "About"]
+    tab_audio_deepfake, tab_lung_cancer, tab_comparison, tab_about = st.tabs(
+        ["Audio Deepfake Detection", "Lung Cancer Detection", "Comparison", "About"]
     )
 
     with tab_audio_deepfake:
@@ -206,13 +206,91 @@ def main():
     with tab_lung_cancer:
         lung_cancer_pipeline()
 
+    with tab_comparison:
+        st.header("Full Model and XAI Comparison")
+        st.markdown("""
+        This page allows you to **compare the outputs of all available models and XAI methods** 
+        on a single input. Upload an **audio file** or **X-ray image**, and you'll see a grid where:
+        
+        - **Columns** = different models  
+        - **Rows** = different XAI methods  
+        - Each cell = the explanation output for that model and XAI method
+        """)
+
+        st.divider()
+
+        col_upload, col_preview = st.columns([1, 1])
+
+        uploaded_file = None
+        file_category = None
+        preview_image = None
+
+        with col_upload:
+            uploaded_file = st.file_uploader(
+                "Choose a file for a full model and XAI comparison",
+                type=['png','jpg','jpeg','wav','mp3']
+            )
+
+        with col_preview:
+            if uploaded_file:
+                file_category = get_file_category(uploaded_file.name, ALLOWED_FILE_TYPES)
+
+                if file_category == "audio":
+                    st.markdown("### Spectrogram")
+                    spec_image = create_spectrogram(save_audio_file(uploaded_file))
+                    preview_image = spec_image
+                elif file_category == "image":
+                    image = Image.open(uploaded_file)
+                    st.markdown("### Chest X-ray")
+                    st.image(image, caption="Uploaded Image", use_column_width=True)
+                    preview_image = image
+                else:
+                    st.error("Unsupported file type for comparison")
+
+        if preview_image is not None:
+            comparison_tab(preview_image, task=file_category)
+
     with tab_about:
         about()
 
 
 def about():
-    st.title("About the Project")
+    st.title("About the Platform")
+    st.markdown("""
+    ## Overview
+    This **Explainable AI (XAI) interface** aims to analyze the results of deep learning
+    models applied to **audio** and **medical imaging** tasks.  
+    We want to **understand why models make their decisions** using
+    several different XAI techniques.
+    Explainability is essential to improve **transparency, trust, and interpretability** of the deep learning models
+    and this platform aims to make XAI techniques accessible through a user-friendly interface.
+    """)
 
+    st.divider()
+
+    st.markdown("""
+    ## Supported Tasks
+
+    ### Audio Deepfake Detection
+    - **Goal**: Classify audio as *real* or *fake*
+    - **Preprocessing**: Audio → Mel-spectrograms
+    - **Models**: MobileNet, VGG16, ResNet
+    - **XAI**: LIME, Grad-CAM, SHAP, Occlusion Sensitivity, Integrated Gradients
+
+    ### Lung Cancer Detection
+    - **Goal**: Detect *benign* vs *malignant* patterns in chest X-rays
+    - **Models**: AlexNet, DenseNet (fine-tuned)
+    - **XAI**: LIME, Grad-CAM, SHAP, Occlusion Sensitivity, Integrated Gradients
+    """)
+
+    st.divider()
+
+    st.markdown("""
+    ## Team
+    - Noémie MAZEPA
+    - Auriane MARCELINO
+    - Lorrain MORLET
+    """)
 
 
 
@@ -332,20 +410,26 @@ def audio_pipeline():
         st.markdown("**Select the XAI methods you want to try:**")
         available_methods = get_available_xai_methods(st.session_state.audio_selected_model)
         
-        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad  = st.columns(5, width=800, border=True)
+        methods = list(available_methods.keys())
+        cols = st.columns(len(methods), gap="small")
         
-        with col_lime:
-            use_lime = st.checkbox("LIME", value=True, disabled=not available_methods["LIME"])
-        with col_gradcam:
-            use_gradcam = st.checkbox("Grad-CAM", value=False, disabled=not available_methods["GradCAM"])
-        with col_shap:
-            use_shap = st.checkbox("SHAP Gradient", value=False, disabled=not available_methods["SHAP_GRADIENT"])
-        with col_occlu:
-            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, disabled=not available_methods["OcclusionSensitivity"])
-        with col_int_grad:
-            use_int_grad = st.checkbox("Integrated Gradients", value=False, disabled=not available_methods["IntegratedGradients"])
+        selected_xai = {}
+
+        for col, method in zip(cols, methods):
+            selected_xai[method] = col.checkbox(
+                method.replace("_", " "),
+                value=False,
+                disabled=not available_methods[method],
+                key=f"audio_xai_{method}" 
+            )
         
-        if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
+        use_lime = selected_xai.get("LIME", False)
+        use_gradcam = selected_xai.get("GradCAM", False)
+        use_shap = selected_xai.get("SHAP_GRADIENT", False)
+        use_occlu = selected_xai.get("OcclusionSensitivity", False)
+        use_int_grad = selected_xai.get("IntegratedGradients", False)
+        
+        if (selected_xai.values()) and st.button("Run Explainability"):
 
             if use_lime:
                 st.markdown("### LIME Explanation")
@@ -538,21 +622,28 @@ def lung_cancer_pipeline():
 
         st.markdown("**Select the XAI methods you want to try:**")
         available_methods = get_available_xai_methods(st.session_state.lung_selected_model)
+
+        methods = list(available_methods.keys())
+        cols = st.columns(len(methods), gap="small")
         
-        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad = st.columns(5, width=800, border=True)
+        selected_xai = {}
+
+        for col, method in zip(cols, methods):
+            selected_xai[method] = col.checkbox(
+                method.replace("_", " "),
+                value=False,
+                disabled=not available_methods[method],
+                key=f"lung_xai_{method}"
+            )
         
-        with col_lime:
-            use_lime = st.checkbox("LIME", value=False, disabled=not available_methods["LIME"], key="lung_lime")
-        with col_gradcam:
-            use_gradcam = st.checkbox("Grad-CAM", value=True, disabled=not available_methods["GradCAM"], key="lung_gradcam")
-        with col_shap:
-            use_shap = st.checkbox("SHAP Gradient", value=False, disabled=not available_methods["SHAP_GRADIENT"], key="lung_shap")
-        with col_occlu:
-            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, disabled=not available_methods["OcclusionSensitivity"], key="lung_occlu")
-        with col_int_grad:
-            use_int_grad = st.checkbox("Integrated Gradients", value=False, disabled=not available_methods["IntegratedGradients"], key="lung_int_grad")
-        
-        if (use_lime or use_gradcam or use_shap or use_occlu or use_int_grad) and st.button("Run Explainability", key="lung_xai_button"):
+        use_lime = selected_xai.get("LIME", False)
+        use_gradcam = selected_xai.get("GradCAM", False)
+        use_shap = selected_xai.get("SHAP_GRADIENT", False)
+        use_occlu = selected_xai.get("OcclusionSensitivity", False)
+        use_int_grad = selected_xai.get("IntegratedGradients", False)
+
+
+        if (selected_xai.values()) and st.button("Run Explainability", key="lung_xai_button"):
             
             # Convert PyTorch model to TensorFlow-compatible format for XAI methods
             # For now, we'll use LIME and GradCAM which can work with PyTorch
@@ -634,6 +725,85 @@ def lung_cancer_pipeline():
                             st.pyplot(fig_int_grad, width='content')
                     except Exception as e:
                         st.error(f"⚠️ Integrated Gradients Error: {str(e)}")
+
+
+
+def comparison_tab(input_image, task="lung"):
+
+    st.divider()
+    if task == "lung":
+        models_dict = AVAILABLE_MODELS_LUNG
+        class_names = class_names_lung_cancer
+    else:
+        models_dict = AVAILABLE_MODELS_AUDIO
+        class_names = class_names_audio_deepfakes
+
+    st.info("This will run all models and all available XAI methods on the input. Be patient!")
+
+    # Button to start
+    if st.button("Run Full Comparison"):
+        all_methods = set()
+        available_per_model = {}
+        for model_name in models_dict.keys():
+            available_methods = get_available_xai_methods(model_name)
+            available_per_model[model_name] = available_methods
+            all_methods.update([m for m, avail in available_methods.items() if avail])
+        all_methods = sorted(list(all_methods))
+
+        for method in all_methods:
+            st.subheader(method.replace("_", " "))
+            cols = st.columns(len(models_dict))
+            for i, (model_name, model_path) in enumerate(models_dict.items()):
+                available = available_per_model[model_name].get(method, False)
+                with cols[i]:
+                    st.caption(model_name)
+                    if available:
+                        # load model
+                        if task == "lung":
+                            device = "cuda" if torch.cuda.is_available() else "cpu"
+                            model = load_pytorch_model(model_path, device=device)
+                            fig = None
+                            try:
+                                if method == "LIME":
+                                    fig = Lime().explain(
+                                        image=input_image,
+                                        model=model,
+                                        class_idx=0,
+                                        class_names=class_names,
+                                        return_image_only=True
+                                    )
+                                elif method == "GradCAM":
+                                    fig = GradCAM().explain(
+                                        image=input_image,
+                                        model=model,
+                                        class_idx=0,
+                                        class_names=class_names,
+                                        return_image_only=True
+                                    )
+                                # other methods similarly...
+                                if fig is not None:
+                                    st.pyplot(fig)
+                            except Exception as e:
+                                st.error(f"{method} error on {model_name}: {str(e)[:100]}")
+                        else:  # audio
+                            model = tf.keras.models.load_model(model_path)
+                            fig = None
+                            try:
+                                if method == "LIME":
+                                    fig = Lime().explain(
+                                        image=input_image,
+                                        model=model,
+                                        class_idx=0,
+                                        class_names=class_names,
+                                        return_image_only=True
+                                    )
+                                # other methods...
+                                if fig is not None:
+                                    st.pyplot(fig)
+                            except Exception as e:
+                                st.error(f"{method} error on {model_name}: {str(e)[:100]}")
+                    else:
+                        st.info("Not available for this model")
 
 
 
