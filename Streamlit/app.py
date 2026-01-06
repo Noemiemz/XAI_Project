@@ -49,10 +49,42 @@ AVAILABLE_MODELS_LUNG = {
     "DenseNet": "models/Lung_Cancer_Detection/DenseNet_weights.pth",
 }
 
+XAI_METHODS_AUTHORIZED_TYPE_OF_MODELS = {
+    "LIME": ["ALL"],
+    "GradCAM": ["CNN"],
+    "SHAP_GRADIENT": ["ALL"],
+    "OcclusionSensitivity": ["CNN"],
+    "IntegratedGradients": ["ALL"],
+}
+
+
+MODELS_TYPE = { 
+    "MobileNet": "CNN",
+    "InceptionV3": "CNN",
+    "VGG16": "CNN",
+    "ResNet50": "CNN",
+    "AlexNet": "CNN",
+    "DenseNet": "CNN",
+}
+
+
 if "prediction_done" not in st.session_state:
     st.session_state.prediction_done = False
 if "selected_model" not in st.session_state:
     st.session_state.selected_model = list(AVAILABLE_MODELS_AUDIO.keys())[0]
+
+def get_available_xai_methods(model_name):
+    """Return list of XAI methods available for the selected model"""
+    model_type = MODELS_TYPE.get(model_name, "CNN")
+    available_methods = {}
+    
+    for method, authorized_types in XAI_METHODS_AUTHORIZED_TYPE_OF_MODELS.items():
+        if "ALL" in authorized_types or model_type in authorized_types:
+            available_methods[method] = True
+        else:
+            available_methods[method] = False
+    
+    return available_methods
 
 def is_file_allowed(filename, allowed_types):
     file_type= os.path.splitext(filename)[1]
@@ -278,18 +310,20 @@ def audio_pipeline():
         st.markdown("## Explainability")
 
         st.markdown("**Select XAI methods:**")
-        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad  = st.columns(5, width=500, border=True)
+        available_methods = get_available_xai_methods(st.session_state.selected_model)
+        
+        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad  = st.columns(5, width=800, border=True)
         
         with col_lime:
-            use_lime = st.checkbox("LIME", value=True)
+            use_lime = st.checkbox("LIME", value=True, disabled=not available_methods["LIME"])
         with col_gradcam:
-            use_gradcam = st.checkbox("Grad-CAM", value=False)
+            use_gradcam = st.checkbox("Grad-CAM", value=False, disabled=not available_methods["GradCAM"])
         with col_shap:
-            use_shap = st.checkbox("SHAP Gradient", value=False)
+            use_shap = st.checkbox("SHAP Gradient", value=False, disabled=not available_methods["SHAP_GRADIENT"])
         with col_occlu:
-            use_occlu = st.checkbox("Occlusion Sensitivity", value=False)
+            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, disabled=not available_methods["OcclusionSensitivity"])
         with col_int_grad:
-            use_int_grad = st.checkbox("Integrated Gradients", value=False)
+            use_int_grad = st.checkbox("Integrated Gradients", value=False, disabled=not available_methods["IntegratedGradients"])
         
         if (use_lime or use_gradcam or use_shap) and st.button("Run Explainability"):
 
@@ -378,7 +412,7 @@ def audio_pipeline():
                             st.pyplot(fig_int_grad, width='content')
                     except Exception as e:
                         st.error(f"⚠️ Integrated Gradients Error: {str(e)}")
-                        
+
     
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
@@ -417,7 +451,7 @@ def lung_cancer_pipeline():
             
             # Display the image
             image = Image.open(uploaded_file)
-            st.image(image, use_column_width=True)
+            st.image(image, width=400)
 
     if uploaded_file:
         with col2:
@@ -465,18 +499,20 @@ def lung_cancer_pipeline():
         st.markdown("## Explainability")
 
         st.markdown("**Select XAI methods:**")
+        available_methods = get_available_xai_methods(selected_lung_model)
+        
         col_lime, col_gradcam, col_shap, col_occlu, col_int_grad = st.columns(5, width=800, border=True)
         
         with col_lime:
-            use_lime = st.checkbox("LIME", value=False, key="lung_lime")
+            use_lime = st.checkbox("LIME", value=False, disabled=not available_methods["LIME"], key="lung_lime")
         with col_gradcam:
-            use_gradcam = st.checkbox("Grad-CAM", value=True, key="lung_gradcam")
+            use_gradcam = st.checkbox("Grad-CAM", value=True, disabled=not available_methods["GradCAM"], key="lung_gradcam")
         with col_shap:
-            use_shap = st.checkbox("SHAP Gradient", value=False, key="lung_shap")
+            use_shap = st.checkbox("SHAP Gradient", value=False, disabled=not available_methods["SHAP_GRADIENT"], key="lung_shap")
         with col_occlu:
-            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, key="lung_occlu")
+            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, disabled=not available_methods["OcclusionSensitivity"], key="lung_occlu")
         with col_int_grad:
-            use_int_grad = st.checkbox("Integrated Gradients", value=False, key="lung_int_grad")
+            use_int_grad = st.checkbox("Integrated Gradients", value=False, disabled=not available_methods["IntegratedGradients"], key="lung_int_grad")
         
         if (use_lime or use_gradcam or use_shap or use_occlu or use_int_grad) and st.button("Run Explainability", key="lung_xai_button"):
             
@@ -525,11 +561,22 @@ def lung_cancer_pipeline():
                     )
                     with st.expander("SHAP Gradient Results"):
                         st.pyplot(fig_shap, width='content')
+            
             if use_occlu:
                 st.markdown("### Occlusion Sensitivity Explanation")
                 with st.spinner("Generating Occlusion Sensitivity results..."):
                     try:
-                        st.warning("Occlusion Sensitivity for PyTorch models requires additional implementation. Please use LIME for now.")
+                        fig_occlu = OcclusionSensitivity().explain(
+                            image=st.session_state.lung_image,
+                            model=st.session_state.lung_model,
+                            class_idx=st.session_state.lung_class_label,
+                            class_names=class_names_lung_cancer,
+                            patch_size=30,
+                            stride=15,
+                            occlusion_value=0
+                        )
+                        with st.expander("Occlusion Sensitivity Results"):
+                            st.pyplot(fig_occlu, width='content')
                     except Exception as e:
                         st.error(f"⚠️ Occlusion Sensitivity Error: {str(e)}")
 
@@ -537,7 +584,16 @@ def lung_cancer_pipeline():
                 st.markdown("### Integrated Gradients Explanation")
                 with st.spinner("Generating Integrated Gradients results..."):
                     try:
-                        st.warning("Integrated Gradients for PyTorch models requires additional implementation. Please use LIME for now.")
+                        fig_int_grad = IntegratedGradients().explain(
+                            image=st.session_state.lung_image,
+                            model=st.session_state.lung_model,
+                            class_idx=st.session_state.lung_class_label,
+                            class_names=class_names_lung_cancer,
+                            baseline=None,
+                            steps=50
+                        )
+                        with st.expander("Integrated Gradients Results"):
+                            st.pyplot(fig_int_grad, width='content')
                     except Exception as e:
                         st.error(f"⚠️ Integrated Gradients Error: {str(e)}")
 

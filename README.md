@@ -102,26 +102,21 @@ This project uses several classifier models to make predictions. The weigths of 
 To ensure that the models load correctly when using the Streamlit application, these repositories need to be cloned locally and placed in the appropriate folders.
 
 - **Lung Cancer Detection Models**
+    Move to the directory `models/`:
+    ```bash
+    cd models
+    ```
     Clone the repository containing the pretrained AlexNet and DenseNet weights:
-    ````
+    ```
     git clone https://huggingface.co/nomiemzp/Lung_Cancer_Detection
-    ````
-    
-    After cloning, place the downloaded folder in the following directory:
-    ````
-
-    ````
+    ```
 
 - **Audio Deepfake Detection Models**
     Clone the repository containing the pretrained AlexNet and DenseNet weights:
-    ````
+    ``` 
     git clone https://huggingface.co/Nasotro/xai_audioclassifiers
-    ````
-    
-    After cloning, place the downloaded folder in the following directory:
-    ````
+    ```
 
-    ````
 
 **Note**: the folder structure and location must match the paths expected in the Streamlit application (`Streamlit/app.py` file) or need to be updated in the code.
 

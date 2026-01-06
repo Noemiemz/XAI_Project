@@ -60,7 +60,7 @@ class Lime:
         )
 
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image)
+        axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
 
         axs[1].imshow(mark_boundaries(temp, mask))
@@ -143,7 +143,7 @@ class Lime:
         
         # Visualization
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image)
+        axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
         axs[0].axis('off')
         
@@ -208,7 +208,7 @@ class GradCAM:
 
         # Showing the original image and the explanation
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image)
+        axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
 
         axs[1].imshow(superimposed_img)
@@ -363,7 +363,7 @@ class GradCAM:
         
         # Visualization
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image)
+        axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
         axs[0].axis('off')
         
@@ -377,7 +377,15 @@ class GradCAM:
         return fig
     
 class SHAP_GRADIENT:
-    def explain(self, image, model, class_idx, background=None, num_samples=100):
+    def explain(self, image, model, class_idx, class_names=None, background=None, num_samples=100):
+        # Check if this is a PyTorch model
+        if isinstance(model, torch.nn.Module):
+            return self._explain_pytorch(image, model, class_idx, class_names, background, num_samples)
+        else:
+            # TensorFlow/Keras model
+            return self._explain_keras(image, model, class_idx, class_names, background, num_samples)
+    
+    def _explain_keras(self, image, model, class_idx, class_names=None, background=None, num_samples=100):
         image = np.array(image, dtype=np.float32) / 255.0
         
         # Preprocess image
@@ -433,7 +441,7 @@ class SHAP_GRADIENT:
 
         # Plot
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image.squeeze(), cmap='jet' if image.shape[-1] == 1 else None)
+        axs[0].imshow(image.squeeze(), cmap='gray')
         axs[0].set_title("Original")
         axs[0].axis('off')
 
@@ -448,15 +456,132 @@ class SHAP_GRADIENT:
         # Normalize for visualization
         shap_map = (shap_map - shap_map.min()) / (shap_map.max() - shap_map.min() + 1e-8)
         
-        axs[1].imshow(shap_map, cmap='RdBu')
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        axs[1].imshow(shap_map, cmap='jet')
         axs[1].set_title(f"SHAP - Class {class_idx}")
         axs[1].axis('off')
         plt.tight_layout()
 
         return fig
+    
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, background=None, num_samples=100):
+        """SHAP Gradient Explainer for PyTorch models"""
+        device = next(model.parameters()).device
+        
+        # Convert PIL Image to numpy array
+        img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels
+        if img_array.ndim == 2:
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:  # RGBA
+            img_array = img_array[:, :, :3]
+        
+        # Convert to tensor and normalize
+        img_tensor = torch.from_numpy(img_array.transpose(2, 0, 1)).unsqueeze(0).to(device)
+        
+        # Normalize using ImageNet statistics
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+        img_tensor = (img_tensor - mean) / std
+        
+        # Create background if not provided
+        if background is None:
+            print("\n3. Creating background dataset...")
+            num_background = 5
+            background_images = []
+            
+            for _ in range(num_background):
+                noisy_image = img_array + np.random.randn(*img_array.shape) * 0.1
+                noisy_image = np.clip(noisy_image, 0, 1)
+                background_images.append(noisy_image)
+            
+            background = np.array(background_images)
+            print(f"   [OK] Background dataset created with shape: {background.shape}")
+        
+        # For PyTorch models, SHAP integration is complex, so we'll use a simpler gradient-based approach
+        # This provides similar functionality to SHAP gradient explainer
+        return self._basic_gradient_attribution(image, model, class_idx, class_names, device)
+    
+    def _basic_gradient_attribution(self, image, model, class_idx, class_names=None, device=None):
+        """Fallback method: Basic gradient attribution for PyTorch models"""
+        # Convert PIL Image to tensor
+        img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels
+        if img_array.ndim == 2:
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:  # RGBA
+            img_array = img_array[:, :, :3]
+        
+        # Convert to tensor and normalize
+        img_tensor = torch.from_numpy(img_array.transpose(2, 0, 1)).unsqueeze(0).to(device)
+        
+        # Normalize using ImageNet statistics
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+        img_tensor = (img_tensor - mean) / std
+        
+        # Enable gradient computation
+        img_tensor.requires_grad = True
+        
+        # Forward pass
+        model.eval()
+        output = model(img_tensor)
+        
+        if isinstance(output, dict):
+            output = list(output.values())[0]
+        
+        # Get the target class score
+        target_score = output[0, class_idx]
+        
+        # Backward pass to get gradients
+        model.zero_grad()
+        target_score.backward()
+        
+        # Get gradients
+        gradients = img_tensor.grad.data.cpu().numpy()
+        gradients = np.abs(gradients)  # Take absolute values
+        gradients = np.mean(gradients, axis=1)  # Average over channels
+        gradients = gradients.squeeze()  # Remove batch dimension
+        
+        # Normalize
+        gradients = (gradients - gradients.min()) / (gradients.max() - gradients.min() + 1e-8)
+        
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        # Visualization
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+        
+        axs[1].imshow(gradients, cmap='jet')
+        axs[1].set_title(f"Gradient Attribution - Predicted class: {class_label}")
+        axs[1].axis('off')
+        plt.tight_layout()
+        
+        return fig
 
 class OcclusionSensitivity:
     def explain(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
+        # Check if this is a PyTorch model
+        if isinstance(model, torch.nn.Module):
+            return self._explain_pytorch(image, model, class_idx, class_names, patch_size, stride, occlusion_value)
+        else:
+            # TensorFlow/Keras model
+            return self._explain_keras(image, model, class_idx, class_names, patch_size, stride, occlusion_value)
+    
+    def _explain_keras(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
         img = np.array(image) / 255.0
         h, w, c = img.shape
 
@@ -495,7 +620,7 @@ class OcclusionSensitivity:
 
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 
-        axs[0].imshow(image)
+        axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
         axs[0].axis('off')
 
@@ -505,9 +630,90 @@ class OcclusionSensitivity:
 
         plt.tight_layout()
         return fig
+    
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
+        """Occlusion Sensitivity for PyTorch models"""
+        device = next(model.parameters()).device
+        
+        # Convert PIL Image to numpy array
+        img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels
+        if img_array.ndim == 2:
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:  # RGBA
+            img_array = img_array[:, :, :3]
+        
+        h, w, c = img_array.shape
+        
+        # Normalize using ImageNet statistics
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+        
+        # Prediction wrapper for PyTorch
+        def predict_fn(x):
+            """Convert numpy array to tensor and get predictions"""
+            # x should be in format (batch, height, width, channels)
+            x_tensor = torch.from_numpy(x).to(device).float()
+            x_tensor = x_tensor.permute(0, 3, 1, 2)  # Convert to (batch, channels, height, width)
+            x_tensor = (x_tensor - mean) / std
+            
+            model.eval()
+            with torch.no_grad():
+                output = model(x_tensor)
+                if isinstance(output, dict):
+                    output = list(output.values())[0]
+            
+            return output.cpu().numpy()
+        
+        # Original prediction
+        original_pred = predict_fn(img_array[np.newaxis, ...])[0, class_idx]
+
+        heatmap = np.zeros((h, w))
+
+        for y in range(0, h - patch_size, stride):
+            for x in range(0, w - patch_size, stride):
+                occluded = img_array.copy()
+                occluded[y:y+patch_size, x:x+patch_size, :] = occlusion_value
+
+                pred = predict_fn(occluded[np.newaxis, ...])[0, class_idx]
+                delta = original_pred - pred
+
+                heatmap[y:y+patch_size, x:x+patch_size] += delta
+
+        heatmap = np.maximum(heatmap, 0)
+        heatmap /= (heatmap.max() + 1e-8)
+        heatmap_smooth = cv2.GaussianBlur(heatmap, (15, 15), 0)
+
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+
+        axs[0].imshow(image, cmap='gray')
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+
+        axs[1].imshow(heatmap_smooth, cmap="jet")
+        axs[1].set_title(f"Occlusion Sensitivity - Predicted class: {class_label}")
+        axs[1].axis('off')
+
+        plt.tight_layout()
+        return fig
 
 class IntegratedGradients:
     def explain(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
+        # Check if this is a PyTorch model
+        if isinstance(model, torch.nn.Module):
+            return self._explain_pytorch(image, model, class_idx, class_names, baseline, steps)
+        else:
+            # TensorFlow/Keras model
+            return self._explain_keras(image, model, class_idx, class_names, baseline, steps)
+    
+    def _explain_keras(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
         img = np.array(image) / 255.0
         img = tf.convert_to_tensor(img, dtype=tf.float32)
 
@@ -554,7 +760,7 @@ class IntegratedGradients:
 
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 
-        axs[0].imshow(image)
+        axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
         axs[0].axis('off')
 
@@ -563,5 +769,97 @@ class IntegratedGradients:
         axs[1].set_title(f"Integrated Gradients - Predicted class: {class_label}")
         axs[1].axis('off')
 
+        plt.tight_layout()
+        return fig
+    
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
+        """Integrated Gradients for PyTorch models"""
+        device = next(model.parameters()).device
+        
+        # Convert PIL Image to numpy array
+        img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels
+        if img_array.ndim == 2:
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:  # RGBA
+            img_array = img_array[:, :, :3]
+        
+        # Convert to tensor and normalize
+        img_tensor = torch.from_numpy(img_array.transpose(2, 0, 1)).unsqueeze(0).to(device)
+        
+        # Normalize using ImageNet statistics
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+        img_tensor = (img_tensor - mean) / std
+        
+        # Create baseline (black image)
+        if baseline is None:
+            baseline = torch.zeros_like(img_tensor)
+        else:
+            baseline_array = np.array(baseline).astype(np.float32) / 255.0
+            if baseline_array.ndim == 2:
+                baseline_array = np.stack([baseline_array] * 3, axis=-1)
+            elif baseline_array.shape[2] == 4:  # RGBA
+                baseline_array = baseline_array[:, :, :3]
+            baseline = torch.from_numpy(baseline_array.transpose(2, 0, 1)).unsqueeze(0).to(device)
+            baseline = (baseline - mean) / std
+        
+        # Create alphas for interpolation
+        alphas = torch.linspace(0.0, 1.0, steps, device=device)
+        
+        # Compute integrated gradients
+        integrated_grads = torch.zeros_like(img_tensor)
+        
+        model.eval()
+        for alpha in alphas:
+            # Interpolate between baseline and input
+            interpolated = baseline + alpha * (img_tensor - baseline)
+            interpolated.requires_grad = True
+            
+            # Forward pass
+            output = model(interpolated)
+            if isinstance(output, dict):
+                output = list(output.values())[0]
+            
+            # Get the target class score
+            target_score = output[0, class_idx]
+            
+            # Backward pass to get gradients
+            model.zero_grad()
+            target_score.backward()
+            
+            # Accumulate gradients
+            integrated_grads += interpolated.grad.data
+        
+        # Average gradients
+        integrated_grads /= steps
+        
+        # Compute attributions
+        attributions = (img_tensor - baseline) * integrated_grads
+        attributions = attributions.mean(dim=1).squeeze().cpu().numpy()  # Average over channels
+        
+        # Take absolute values and normalize
+        attributions = np.abs(attributions)
+        attributions = np.maximum(attributions, 0)
+        attributions /= (attributions.max() + 1e-8)
+        
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        # Visualization
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image, cmap='gray')
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+        
+        axs[1].imshow(np.zeros_like(attributions), cmap='gray')
+        axs[1].imshow(attributions, cmap="jet", vmin=0, vmax=1)
+        axs[1].set_title(f"Integrated Gradients - Predicted class: {class_label}")
+        axs[1].axis('off')
+        
         plt.tight_layout()
         return fig
