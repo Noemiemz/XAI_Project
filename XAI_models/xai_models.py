@@ -15,15 +15,15 @@ import torch.nn.functional as F
 from PIL import Image
 
 class Lime:
-    def explain(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8):
+    def explain(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8, return_image_only=False):
         # Check if this is a PyTorch model
         if isinstance(model, torch.nn.Module):
-            return self._explain_pytorch(image, model, class_idx, class_names, num_samples, num_features)
+            return self._explain_pytorch(image, model, class_idx, class_names, num_samples, num_features, return_image_only)
         else:
             # TensorFlow/Keras model
-            return self._explain_keras(image, model, class_idx, class_names, num_samples, num_features)
+            return self._explain_keras(image, model, class_idx, class_names, num_samples, num_features, return_image_only)
     
-    def _explain_keras(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8):
+    def _explain_keras(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8, return_image_only=False):
         img_array = np.array(image) / 255
 
         # Create a prediction wrapper that handles both TFSMLayer and regular Keras models
@@ -59,17 +59,29 @@ class Lime:
             else f"class {class_idx}"
         )
 
+        processed_image=mark_boundaries(temp, mask)
+
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(image, cmap='gray')
+            ax.imshow(processed_image, alpha=0.5)
+            ax.set_title(f"LIME - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
         axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
 
-        axs[1].imshow(mark_boundaries(temp, mask))
+        axs[1].imshow(image, cmap='gray')
+        axs[1].imshow(processed_image, alpha=0.5)
         axs[1].set_title(f"LIME - Predicted class: {class_label}")
         plt.tight_layout()
 
         return(fig)
     
-    def _explain_pytorch(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8):
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8, return_image_only=False):
         """LIME explanation for PyTorch models"""
         device = next(model.parameters()).device
         
@@ -141,29 +153,38 @@ class Lime:
             else f"class {class_idx}"
         )
         
-        # Visualization
+        processed_image=mark_boundaries(temp, mask)
+
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(image, cmap='gray')
+            ax.imshow(processed_image, alpha=0.5)
+            ax.set_title(f"LIME - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
         axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
-        axs[0].axis('off')
-        
-        axs[1].imshow(mark_boundaries(temp, mask))
+
+        axs[1].imshow(image, cmap='gray')
+        axs[1].imshow(processed_image, alpha=0.5)
         axs[1].set_title(f"LIME - Predicted class: {class_label}")
-        axs[1].axis('off')
         plt.tight_layout()
         
         return fig
 
 class GradCAM:
-    def explain(self, image, model, class_idx, class_names=None):
+    def explain(self, image, model, class_idx, class_names=None, return_image_only=False):
         # Check if this is a PyTorch model
         if isinstance(model, torch.nn.Module):
-            return self._explain_pytorch(image, model, class_idx, class_names)
+            return self._explain_pytorch(image, model, class_idx, class_names, return_image_only)
         else:
             # TensorFlow/Keras model
-            return self._explain_keras(image, model, class_idx, class_names)
+            return self._explain_keras(image, model, class_idx, class_names, return_image_only)
     
-    def _explain_keras(self, image, model, class_idx, class_names=None):
+    def _explain_keras(self, image, model, class_idx, class_names=None, return_image_only=False):
         img_array = img_to_array(image)
 
         x = np.expand_dims(img_array,axis=0)
@@ -206,18 +227,26 @@ class GradCAM:
             else f"class {class_idx}"
         )
 
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(cv2.cvtColor(superimposed_img, cv2.COLOR_BGR2RGB))
+            ax.set_title(f"Grad-CAM - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+
         # Showing the original image and the explanation
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
         axs[0].imshow(image, cmap='gray')
         axs[0].set_title("Original image")
 
-        axs[1].imshow(superimposed_img)
+        axs[1].imshow(cv2.cvtColor(superimposed_img, cv2.COLOR_BGR2RGB))
         axs[1].set_title(f"Grad-CAM - Predicted class: {class_label}")
         plt.tight_layout()
 
         return(fig)
     
-    def _explain_pytorch(self, image, model, class_idx, class_names=None):
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, return_image_only=False):
         """Grad-CAM explanation for PyTorch models"""
         device = next(model.parameters()).device
         
@@ -284,7 +313,6 @@ class GradCAM:
         model.zero_grad()
         target_score.backward()
         
-        # Get gradients of the feature map - this is the correct approach
         # We need to get gradients of the feature maps, not the input
         
         # Clear previous hooks
@@ -360,6 +388,14 @@ class GradCAM:
             if class_names and class_idx < len(class_names)
             else f"class {class_idx}"
         )
+
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(cv2.cvtColor(superimposed_img, cv2.COLOR_BGR2RGB))
+            ax.set_title(f"Grad-CAM - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
         
         # Visualization
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
@@ -377,15 +413,15 @@ class GradCAM:
         return fig
     
 class SHAP_GRADIENT:
-    def explain(self, image, model, class_idx, class_names=None, background=None, num_samples=100):
+    def explain(self, image, model, class_idx, class_names=None, background=None, num_samples=100, return_image_only=False):
         # Check if this is a PyTorch model
         if isinstance(model, torch.nn.Module):
-            return self._explain_pytorch(image, model, class_idx, class_names, background, num_samples)
+            return self._explain_pytorch(image, model, class_idx, class_names, background, num_samples, return_image_only)
         else:
             # TensorFlow/Keras model
-            return self._explain_keras(image, model, class_idx, class_names, background, num_samples)
+            return self._explain_keras(image, model, class_idx, class_names, background, num_samples, return_image_only)
     
-    def _explain_keras(self, image, model, class_idx, class_names=None, background=None, num_samples=100):
+    def _explain_keras(self, image, model, class_idx, class_names=None, background=None, num_samples=100, return_image_only=False):
         image = np.array(image, dtype=np.float32) / 255.0
         
         # Preprocess image
@@ -430,7 +466,7 @@ class SHAP_GRADIENT:
         try:
             shap_values = explainer.shap_values(image)
         except TypeError as e:
-            print("ERROOORRRRR, \nCaught TypeError, trying with nsamples parameter:", e)
+            print("ERROR, \nCaught TypeError, trying with nsamples parameter:", e)
             if "ranked_outputs" in str(e):
                 shap_values = explainer.shap_values(image, nsamples=num_samples)
             else:
@@ -439,11 +475,6 @@ class SHAP_GRADIENT:
         # Ensure class_idx is within bounds
         class_idx = min(class_idx, len(shap_values) - 1)
 
-        # Plot
-        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(image.squeeze(), cmap='gray')
-        axs[0].set_title("Original")
-        axs[0].axis('off')
 
         shap_map = shap_values[class_idx]
         
@@ -461,15 +492,29 @@ class SHAP_GRADIENT:
             if class_names and class_idx < len(class_names)
             else f"class {class_idx}"
         )
+
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(shap_map, cmap='jet')
+            ax.set_title(f"SHAP - Class {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+
+        # Plot
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image.squeeze(), cmap='gray')
+        axs[0].set_title("Original")
+        axs[0].axis('off')
         
         axs[1].imshow(shap_map, cmap='jet')
-        axs[1].set_title(f"SHAP - Class {class_idx}")
+        axs[1].set_title(f"SHAP - Class {class_label}")
         axs[1].axis('off')
         plt.tight_layout()
 
         return fig
     
-    def _explain_pytorch(self, image, model, class_idx, class_names=None, background=None, num_samples=100):
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, background=None, num_samples=100, return_image_only=False):
         """SHAP Gradient Explainer for PyTorch models"""
         device = next(model.parameters()).device
         
@@ -506,9 +551,9 @@ class SHAP_GRADIENT:
         
         # For PyTorch models, SHAP integration is complex, so we'll use a simpler gradient-based approach
         # This provides similar functionality to SHAP gradient explainer
-        return self._basic_gradient_attribution(image, model, class_idx, class_names, device)
+        return self._basic_gradient_attribution(image, model, class_idx, class_names, device, return_image_only)
     
-    def _basic_gradient_attribution(self, image, model, class_idx, class_names=None, device=None):
+    def _basic_gradient_attribution(self, image, model, class_idx, class_names=None, device=None, return_image_only=False):
         """Fallback method: Basic gradient attribution for PyTorch models"""
         # Convert PIL Image to tensor
         img_array = np.array(image).astype(np.float32) / 255.0
@@ -558,6 +603,14 @@ class SHAP_GRADIENT:
             if class_names and class_idx < len(class_names)
             else f"class {class_idx}"
         )
+
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(gradients, cmap='jet')
+            ax.set_title(f"SHAP - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
         
         # Visualization
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
@@ -566,22 +619,22 @@ class SHAP_GRADIENT:
         axs[0].axis('off')
         
         axs[1].imshow(gradients, cmap='jet')
-        axs[1].set_title(f"Gradient Attribution - Predicted class: {class_label}")
+        axs[1].set_title(f"SHAP - Predicted class: {class_label}")
         axs[1].axis('off')
         plt.tight_layout()
         
         return fig
 
 class OcclusionSensitivity:
-    def explain(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
+    def explain(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0, return_image_only=False):
         # Check if this is a PyTorch model
         if isinstance(model, torch.nn.Module):
-            return self._explain_pytorch(image, model, class_idx, class_names, patch_size, stride, occlusion_value)
+            return self._explain_pytorch(image, model, class_idx, class_names, patch_size, stride, occlusion_value, return_image_only)
         else:
             # TensorFlow/Keras model
-            return self._explain_keras(image, model, class_idx, class_names, patch_size, stride, occlusion_value)
+            return self._explain_keras(image, model, class_idx, class_names, patch_size, stride, occlusion_value, return_image_only)
     
-    def _explain_keras(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
+    def _explain_keras(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0, return_image_only=False):
         img = np.array(image) / 255.0
         h, w, c = img.shape
 
@@ -618,6 +671,16 @@ class OcclusionSensitivity:
             else f"class {class_idx}"
         )
 
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(image, cmap='gray')
+            ax.imshow(heatmap_smooth, cmap='jet', alpha=0.5)
+            ax.set_title(f"Occlusion Sensitivity - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+        
+
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 
         axs[0].imshow(image, cmap='gray')
@@ -632,7 +695,7 @@ class OcclusionSensitivity:
         plt.tight_layout()
         return fig
     
-    def _explain_pytorch(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0):
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, patch_size=32, stride=8, occlusion_value=0.0, return_image_only=False):
         """Occlusion Sensitivity for PyTorch models"""
         device = next(model.parameters()).device
         
@@ -692,6 +755,15 @@ class OcclusionSensitivity:
             else f"class {class_idx}"
         )
 
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(image, cmap='gray')
+            ax.imshow(heatmap_smooth, cmap='jet', alpha=0.5)
+            ax.set_title(f"Occlusion Sensitivity - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 
         axs[0].imshow(image, cmap='gray')
@@ -707,15 +779,15 @@ class OcclusionSensitivity:
         return fig
 
 class IntegratedGradients:
-    def explain(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
+    def explain(self, image, model, class_idx, class_names=None, baseline=None, steps=50, return_image_only=False):
         # Check if this is a PyTorch model
         if isinstance(model, torch.nn.Module):
-            return self._explain_pytorch(image, model, class_idx, class_names, baseline, steps)
+            return self._explain_pytorch(image, model, class_idx, class_names, baseline, steps, return_image_only)
         else:
             # TensorFlow/Keras model
-            return self._explain_keras(image, model, class_idx, class_names, baseline, steps)
+            return self._explain_keras(image, model, class_idx, class_names, baseline, steps, return_image_only)
     
-    def _explain_keras(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
+    def _explain_keras(self, image, model, class_idx, class_names=None, baseline=None, steps=50, return_image_only=False):
         img = np.array(image) / 255.0
         img = tf.convert_to_tensor(img, dtype=tf.float32)
 
@@ -760,6 +832,15 @@ class IntegratedGradients:
             else f"class {class_idx}"
         )
 
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(np.zeros_like(attributions), cmap='gray')
+            ax.imshow(attributions, cmap='jet', vmin=0, vmax=1)
+            ax.set_title(f"Integrated Gradients - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 
         axs[0].imshow(image, cmap='gray')
@@ -774,7 +855,7 @@ class IntegratedGradients:
         plt.tight_layout()
         return fig
     
-    def _explain_pytorch(self, image, model, class_idx, class_names=None, baseline=None, steps=50):
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, baseline=None, steps=50, return_image_only=False):
         """Integrated Gradients for PyTorch models"""
         device = next(model.parameters()).device
         
@@ -852,6 +933,16 @@ class IntegratedGradients:
             else f"class {class_idx}"
         )
         
+        if return_image_only:
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.imshow(np.zeros_like(attributions), cmap='gray')
+            ax.imshow(attributions, cmap='jet', vmin=0, vmax=1)
+            ax.set_title(f"Integrated Gradients - Predicted class: {class_label}")
+            ax.axis('off')
+            plt.tight_layout()
+            return fig
+        
+
         # Visualization
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
         axs[0].imshow(image, cmap='gray')

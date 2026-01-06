@@ -237,12 +237,13 @@ def main():
 
                 if file_category == "audio":
                     st.markdown("### Spectrogram")
-                    spec_image = create_spectrogram(save_audio_file(uploaded_file))
-                    preview_image = spec_image
+                    with st.spinner("Generating Spectrogram..."):
+                        spec_image = create_spectrogram(save_audio_file(uploaded_file))
+                        preview_image = spec_image
                 elif file_category == "image":
                     image = Image.open(uploaded_file)
                     st.markdown("### Chest X-ray")
-                    st.image(image, caption="Uploaded Image", use_column_width=True)
+                    st.image(image, caption="Uploaded Image", use_container_width=False)
                     preview_image = image
                 else:
                     st.error("Unsupported file type for comparison")
@@ -476,6 +477,7 @@ def audio_pipeline():
                             image=spec,
                             model=st.session_state.model,
                             class_idx=st.session_state.class_label,
+                            class_names=st.session_state.class_names,
                             background=background_images,
                             num_samples=100
                         )
@@ -685,6 +687,7 @@ def lung_cancer_pipeline():
                         image=st.session_state.lung_image,
                         model=st.session_state.lung_model,
                         class_idx=st.session_state.lung_class_label,
+                        class_names=st.session_state.class_names,
                         background=[st.session_state.lung_image],
                         num_samples=100
                     )
@@ -738,7 +741,9 @@ def comparison_tab(input_image, task="lung"):
         models_dict = AVAILABLE_MODELS_AUDIO
         class_names = class_names_audio_deepfakes
 
-    st.info("This will run all models and all available XAI methods on the input. Be patient!")
+    st.info("This will run all models and all available XAI methods on the input."
+            "Depending on the number of models and methods, it can take some time. Be patient!"
+    )
 
     # Button to start
     if st.button("Run Full Comparison"):
@@ -754,57 +759,127 @@ def comparison_tab(input_image, task="lung"):
             st.subheader(method.replace("_", " "))
             cols = st.columns(len(models_dict))
             for i, (model_name, model_path) in enumerate(models_dict.items()):
-                available = available_per_model[model_name].get(method, False)
                 with cols[i]:
                     st.caption(model_name)
-                    if available:
-                        # load model
+
+                    available = available_per_model[model_name].get(method, False)
+                    if not available:
+                        st.info("Not available for this model")
+                        continue
+                    
+                    fig = None
+                    try:
+                        # Lung (PyTorch)
                         if task == "lung":
                             device = "cuda" if torch.cuda.is_available() else "cpu"
                             model = load_pytorch_model(model_path, device=device)
-                            fig = None
-                            try:
-                                if method == "LIME":
-                                    fig = Lime().explain(
-                                        image=input_image,
-                                        model=model,
-                                        class_idx=0,
-                                        class_names=class_names,
-                                        return_image_only=True
-                                    )
-                                elif method == "GradCAM":
-                                    fig = GradCAM().explain(
-                                        image=input_image,
-                                        model=model,
-                                        class_idx=0,
-                                        class_names=class_names,
-                                        return_image_only=True
-                                    )
-                                # other methods similarly...
-                                if fig is not None:
-                                    st.pyplot(fig)
-                            except Exception as e:
-                                st.error(f"{method} error on {model_name}: {str(e)[:100]}")
-                        else:  # audio
-                            model = tf.keras.models.load_model(model_path)
-                            fig = None
-                            try:
-                                if method == "LIME":
-                                    fig = Lime().explain(
-                                        image=input_image,
-                                        model=model,
-                                        class_idx=0,
-                                        class_names=class_names,
-                                        return_image_only=True
-                                    )
-                                # other methods...
-                                if fig is not None:
-                                    st.pyplot(fig)
-                            except Exception as e:
-                                st.error(f"{method} error on {model_name}: {str(e)[:100]}")
-                    else:
-                        st.info("Not available for this model")
 
+                            if method == "LIME":
+                                fig = Lime().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    return_image_only=True
+                                )
+                            elif method == "GradCAM":
+                                fig = GradCAM().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    return_image_only=True
+                                )
+                            elif method == "SHAP_GRADIENT":
+                                fig = SHAP_GRADIENT().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    background=[input_image],
+                                    num_samples=50,
+                                    return_image_only=True
+                                )
+                            elif method == "OcclusionSensitivity":
+                                fig = OcclusionSensitivity().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    patch_size=30,
+                                    stride=15,
+                                    occlusion_value=0,
+                                    return_image_only=True
+                                )
+                            elif method == "IntegratedGradients":
+                                fig = IntegratedGradients().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    baseline=None,
+                                    steps=50,
+                                    return_image_only=True
+                                )
+
+                        # Audio (TensorFlow/Keras)
+                        else:
+                            model = tf.keras.models.load_model(model_path)
+
+                            if method == "LIME":
+                                fig = Lime().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    return_image_only=True
+                                )
+                            elif method == "GradCAM":
+                                fig = GradCAM().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    return_image_only=True
+                                )
+                            elif method == "SHAP_GRADIENT":
+                                fig = SHAP_GRADIENT().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    background=[input_image],
+                                    num_samples=50,
+                                    return_image_only=True
+                                )
+                            elif method == "OcclusionSensitivity":
+                                fig = OcclusionSensitivity().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    patch_size=30,
+                                    stride=15,
+                                    occlusion_value=0,
+                                    return_image_only=True
+                                )
+                            elif method == "IntegratedGradients":
+                                fig = IntegratedGradients().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    baseline=None,
+                                    steps=50,
+                                    return_image_only=True
+                                )
+
+                        # Display figure
+                        if fig is not None:
+                            st.pyplot(fig)
+
+                    except Exception as e:
+                        st.error(f"{method} failed on {model_name}: {str(e)[:100]}")
 
 
 if __name__ == "__main__":
