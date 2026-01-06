@@ -10,8 +10,20 @@ from keras.preprocessing.image import img_to_array
 import shap
 from keras.applications.vgg16 import preprocess_input
 
+import torch
+import torch.nn.functional as F
+from PIL import Image
+
 class Lime:
     def explain(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8):
+        # Check if this is a PyTorch model
+        if isinstance(model, torch.nn.Module):
+            return self._explain_pytorch(image, model, class_idx, class_names, num_samples, num_features)
+        else:
+            # TensorFlow/Keras model
+            return self._explain_keras(image, model, class_idx, class_names, num_samples, num_features)
+    
+    def _explain_keras(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8):
         img_array = np.array(image) / 255
 
         # Create a prediction wrapper that handles both TFSMLayer and regular Keras models
@@ -56,9 +68,102 @@ class Lime:
         plt.tight_layout()
 
         return(fig)
+    
+    def _explain_pytorch(self, image, model, class_idx, class_names=None, num_samples=1000, num_features=8):
+        """LIME explanation for PyTorch models"""
+        device = next(model.parameters()).device
+        
+        # Convert PIL Image to numpy array
+        img_array = np.array(image)
+        
+        # Normalize to [0, 1]
+        if img_array.dtype == np.uint8:
+            img_normalized = img_array.astype(np.float32) / 255.0
+        else:
+            img_normalized = img_array.astype(np.float32)
+        
+        # Ensure 3 channels
+        if img_normalized.ndim == 2:
+            img_normalized = np.stack([img_normalized] * 3, axis=-1)
+        elif img_normalized.shape[2] == 4:  # RGBA
+            img_normalized = img_normalized[:, :, :3]
+        
+        # Create a prediction wrapper for PyTorch model
+        def predict_fn(images):
+            batch_preds = []
+            model.eval()
+            with torch.no_grad():
+                for img in images:
+                    # Convert numpy to PIL Image
+                    if img.max() <= 1.0:
+                        img_display = (img * 255).astype(np.uint8)
+                    else:
+                        img_display = img.astype(np.uint8)
+                    
+                    img_pil = Image.fromarray(img_display)
+                    
+                    # Convert to tensor and normalize
+                    img_tensor = torch.from_numpy(np.array(img_pil).astype(np.float32).transpose(2, 0, 1) / 255.0).unsqueeze(0).to(device)
+                    
+                    # Normalize using ImageNet statistics
+                    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+                    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+                    img_tensor = (img_tensor - mean) / std
+                    
+                    # Get predictions
+                    output = model(img_tensor)
+                    if isinstance(output, dict):
+                        output = list(output.values())[0]
+                    
+                    batch_preds.append(output[0].cpu().numpy())
+            
+            return np.array(batch_preds)
+        
+        # Explaining the prediction
+        explainer = lime_image.LimeImageExplainer()
+        explanation = explainer.explain_instance(
+            img_normalized.astype('float64'),
+            predict_fn,
+            hide_color=0,
+            num_samples=num_samples
+        )
+        
+        temp, mask = explanation.get_image_and_mask(
+            class_idx,
+            positive_only=False,
+            num_features=num_features,
+            hide_rest=True
+        )
+        
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        # Visualization
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+        
+        axs[1].imshow(mark_boundaries(temp, mask))
+        axs[1].set_title(f"LIME - Predicted class: {class_label}")
+        axs[1].axis('off')
+        plt.tight_layout()
+        
+        return fig
 
 class GradCAM:
     def explain(self, image, model, class_idx, class_names=None):
+        # Check if this is a PyTorch model
+        if isinstance(model, torch.nn.Module):
+            return self._explain_pytorch(image, model, class_idx, class_names)
+        else:
+            # TensorFlow/Keras model
+            return self._explain_keras(image, model, class_idx, class_names)
+    
+    def _explain_keras(self, image, model, class_idx, class_names=None):
         img_array = img_to_array(image)
 
         x = np.expand_dims(img_array,axis=0)
@@ -111,6 +216,165 @@ class GradCAM:
         plt.tight_layout()
 
         return(fig)
+    
+    def _explain_pytorch(self, image, model, class_idx, class_names=None):
+        """Grad-CAM explanation for PyTorch models"""
+        device = next(model.parameters()).device
+        
+        # Convert PIL Image to tensor
+        if isinstance(image, Image.Image):
+            img_array = np.array(image).astype(np.float32) / 255.0
+        else:
+            img_array = np.array(image).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels
+        if img_array.ndim == 2:
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:  # RGBA
+            img_array = img_array[:, :, :3]
+        
+        # Convert to tensor and normalize
+        img_tensor = torch.from_numpy(img_array.transpose(2, 0, 1)).unsqueeze(0).to(device)
+        
+        # Normalize using ImageNet statistics
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+        img_tensor = (img_tensor - mean) / std
+        
+        # Enable gradient computation
+        img_tensor.requires_grad = True
+        
+        # Register hook to get the feature map
+        feature_maps = None
+        def get_feature_maps(module, input, output):
+            nonlocal feature_maps
+            feature_maps = output.detach()
+        
+        # Find the last convolutional layer
+        last_conv_layer = None
+        for module in reversed(list(model.modules())):
+            if isinstance(module, torch.nn.Conv2d):
+                last_conv_layer = module
+                break
+        
+        if last_conv_layer is None:
+            raise ValueError("Could not find a convolutional layer in the model")
+        
+        # Register hook
+        hook = last_conv_layer.register_forward_hook(get_feature_maps)
+        
+        # Forward pass - need gradients for Grad-CAM
+        model.eval()
+        output = model(img_tensor)
+        
+        # Get the scores
+        if isinstance(output, dict):
+            output = list(output.values())[0]
+        
+        scores = output[0].detach().cpu().numpy()
+        
+        # Backward pass to get gradients
+        img_tensor.requires_grad = True
+        output = model(img_tensor)
+        if isinstance(output, dict):
+            output = list(output.values())[0]
+        
+        # Get the target class score
+        target_score = output[0, class_idx]
+        model.zero_grad()
+        target_score.backward()
+        
+        # Get gradients of the feature map - this is the correct approach
+        # We need to get gradients of the feature maps, not the input
+        
+        # Clear previous hooks
+        hook.remove()
+        
+        # Register new hooks for proper Grad-CAM computation
+        feature_maps = None
+        feature_grads = None
+        
+        def get_feature_maps(module, input, output):
+            nonlocal feature_maps
+            feature_maps = output.detach()
+        
+        def get_feature_grads(module, grad_input, grad_output):
+            nonlocal feature_grads
+            feature_grads = grad_output[0].detach()
+        
+        # Register hooks
+        hook_fwd = last_conv_layer.register_forward_hook(get_feature_maps)
+        hook_bwd = last_conv_layer.register_backward_hook(get_feature_grads)
+        
+        # Forward pass - need gradients for Grad-CAM
+        model.eval()
+        output = model(img_tensor)
+        
+        # Backward pass to get gradients
+        if isinstance(output, dict):
+            output = list(output.values())[0]
+        target_score = output[0, class_idx]
+        model.zero_grad()
+        target_score.backward()
+        
+        # Remove hooks
+        hook_fwd.remove()
+        hook_bwd.remove()
+        
+        # Compute pooled gradients
+        if feature_grads is not None:
+            pooled_grads = torch.mean(feature_grads, dim=[0, 2, 3])
+        else:
+            # Fallback: this shouldn't happen if the model has conv layers
+            raise ValueError("Could not get feature map gradients")
+        
+        # Weighted combination
+        batch_size, num_channels, h, w = feature_maps.shape
+        heatmap = torch.zeros(h, w, device=device)
+        
+        for i in range(num_channels):
+            heatmap += pooled_grads[i] * feature_maps[0, i, :, :]
+        
+        heatmap = torch.relu(heatmap)
+        heatmap = heatmap / (torch.max(heatmap) + 1e-8)
+        
+        # Resize heatmap to match input image size
+        heatmap_np = heatmap.cpu().numpy()
+        heatmap_np = cv2.resize(heatmap_np, (img_array.shape[1], img_array.shape[0]))
+        
+        # Apply colormap
+        heatmap_np = np.uint8(255 * heatmap_np)
+        heatmap_colored = cv2.applyColorMap(heatmap_np, cv2.COLORMAP_JET)
+        
+        # Denormalize image for visualization
+        img_display = img_array.copy()
+        img_display = np.uint8(255 * img_display)
+        if img_display.shape[2] == 3:
+            img_display = cv2.cvtColor(img_display, cv2.COLOR_RGB2BGR)
+        
+        # Superimpose
+        superimposed_img = cv2.addWeighted(img_display, 0.6, heatmap_colored, 0.4, 0)
+        
+        class_label = (
+            class_names[class_idx]
+            if class_names and class_idx < len(class_names)
+            else f"class {class_idx}"
+        )
+        
+        # Visualization
+        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+        axs[0].imshow(image)
+        axs[0].set_title("Original image")
+        axs[0].axis('off')
+        
+        axs[1].imshow(cv2.cvtColor(superimposed_img, cv2.COLOR_BGR2RGB))
+        axs[1].set_title(f"Grad-CAM - Predicted class: {class_label}")
+        axs[1].axis('off')
+        plt.tight_layout()
+        
+        hook.remove()
+        
+        return fig
     
 class SHAP_GRADIENT:
     def explain(self, image, model, class_idx, background=None, num_samples=100):

@@ -15,9 +15,12 @@ from keras.preprocessing.image import load_img
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
+import torch
+from torchvision import models
+import torch.nn as nn
 
 from XAI_models.xai_models import Lime, GradCAM, SHAP_GRADIENT, OcclusionSensitivity, IntegratedGradients
-from Inference.inference import predict_image
+from Inference.inference import predict_image, predict_image_pytorch
 
 ALLOWED_FILE_TYPES = {
     "audio": [".wav", ".mp3"],
@@ -31,6 +34,7 @@ st.set_page_config(
 )
 
 class_names_audio_deepfakes = ['real','fake']
+class_names_lung_cancer = ['benign', 'malignant']
 
 # Available models
 AVAILABLE_MODELS_AUDIO = {
@@ -41,8 +45,8 @@ AVAILABLE_MODELS_AUDIO = {
 }
 
 AVAILABLE_MODELS_LUNG = {
-    "AlexNet for lung cancer": "models/Lung_Cancer_Detection/AlexNet_weights.pth",
-    "DenseNet for lung cancer": "models/Lung_Cancer_Detection/DenseNet_weights.pth",
+    "AlexNet": "models/Lung_Cancer_Detection/AlexNet_weights.pth",
+    "DenseNet": "models/Lung_Cancer_Detection/DenseNet_weights.pth",
 }
 
 if "prediction_done" not in st.session_state:
@@ -84,6 +88,25 @@ def cleanup_old_files(filename):
                 os.remove(spec_path)
             except Exception:
                 pass
+
+def load_pytorch_model(model_path, device="cpu"):
+    """Load a PyTorch model for lung cancer detection"""
+    if model_path.endswith("AlexNet_weights.pth"):
+        model = models.alexnet(pretrained=False)
+        num_features = model.classifier[6].in_features
+        model.classifier[6] = nn.Linear(num_features, 2)
+    elif model_path.endswith("DenseNet_weights.pth"):
+        model = models.densenet121(pretrained=False)
+        num_features = model.classifier.in_features
+        model.classifier = nn.Linear(num_features, 2)
+    else:
+        raise ValueError(f"Unknown model type from path: {model_path}")
+    
+    # Load weights
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
 
 def save_audio_file(sound_file):
     # save your sound file in the right folder by following the path
@@ -363,6 +386,15 @@ def lung_cancer_pipeline():
 
     st.divider()
 
+    # Model selection for Lung Cancer
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Model Selection")
+    selected_lung_model = st.sidebar.selectbox(
+        "Choose a model:",
+        options=list(AVAILABLE_MODELS_LUNG.keys()),
+        key="lung_model_select"
+    )
+
     col1, col2 = st.columns([1, 1])
 
     with col1:
@@ -370,7 +402,8 @@ def lung_cancer_pipeline():
         uploaded_file = st.file_uploader(
             "Choose an image file",
             type=['png','jpg','jpeg'],
-            help="Only .png, .jpg and .jpeg files are supported"
+            help="Only .png, .jpg and .jpeg files are supported",
+            key="lung_file_uploader"
         )
 
         if not uploaded_file:
@@ -382,9 +415,131 @@ def lung_cancer_pipeline():
                 st.error("This file type is not allowed. Please upload a .png, .jpg or .jpeg file.")
                 return
             
+            # Display the image
+            image = Image.open(uploaded_file)
+            st.image(image, use_column_width=True)
+
     if uploaded_file:
         with col2:
-            st.image(uploaded_file)
+            st.markdown("### Prediction")
+
+            # Prediction
+            if not st.session_state.get("lung_prediction_done", False):
+                with st.spinner("Analyzing image..."):
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    model_path = AVAILABLE_MODELS_LUNG[selected_lung_model]
+                    
+                    # Load PyTorch model
+                    model = load_pytorch_model(model_path, device=device)
+                    
+                    # Make prediction
+                    image = Image.open(uploaded_file)
+                    output = predict_image_pytorch(model, image, device=device)
+
+                    st.session_state.lung_model = model
+                    st.session_state.lung_output = output
+                    st.session_state.lung_class_label = output["class_idx"]
+                    st.session_state.lung_prediction = output["predictions"]
+                    st.session_state.lung_prediction_done = True
+                    st.session_state.lung_image = image
+
+            class_label = st.session_state.lung_class_label
+            prediction = st.session_state.lung_prediction
+            
+            # prediction[0][0] is probability of benign, prediction[0][1] is probability of malignant
+            benign_prob = float(prediction[0][0])
+            malignant_prob = float(prediction[0][1])
+            
+            if class_label == 1:  # malignant
+                confidence = malignant_prob
+                st.error("The image shows **Malignant** (Lung Cancer Detected)")
+            else:  # benign
+                confidence = benign_prob
+                st.success("The image shows **Benign** (No Cancer Detected)")
+
+            st.progress(confidence)
+            st.caption(f"Confidence: {confidence:.2%}")
+
+        # XAI
+        st.divider()
+        st.markdown("## Explainability")
+
+        st.markdown("**Select XAI methods:**")
+        col_lime, col_gradcam, col_shap, col_occlu, col_int_grad = st.columns(5, width=800, border=True)
+        
+        with col_lime:
+            use_lime = st.checkbox("LIME", value=False, key="lung_lime")
+        with col_gradcam:
+            use_gradcam = st.checkbox("Grad-CAM", value=True, key="lung_gradcam")
+        with col_shap:
+            use_shap = st.checkbox("SHAP Gradient", value=False, key="lung_shap")
+        with col_occlu:
+            use_occlu = st.checkbox("Occlusion Sensitivity", value=False, key="lung_occlu")
+        with col_int_grad:
+            use_int_grad = st.checkbox("Integrated Gradients", value=False, key="lung_int_grad")
+        
+        if (use_lime or use_gradcam or use_shap or use_occlu or use_int_grad) and st.button("Run Explainability", key="lung_xai_button"):
+            
+            # Convert PyTorch model to TensorFlow-compatible format for XAI methods
+            # For now, we'll use LIME and GradCAM which can work with PyTorch
+            
+            if use_lime:
+                st.markdown("### LIME Explanation")
+                with st.spinner("Generating LIME results..."):
+                    try:
+                        fig_lime = Lime().explain(
+                            image=st.session_state.lung_image,
+                            model=st.session_state.lung_model,
+                            class_idx=st.session_state.lung_class_label,
+                            class_names=class_names_lung_cancer
+                        )
+                        with st.expander("LIME Results"):
+                            st.pyplot(fig_lime, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ LIME Error: {str(e)[:100]}")
+
+            if use_gradcam:
+                st.markdown("### Grad-CAM Explanation")
+                with st.spinner("Generating Grad-CAM results..."):
+                    # try:
+                        fig_grad = GradCAM().explain(
+                            image=st.session_state.lung_image,
+                            model=st.session_state.lung_model,
+                            class_idx=st.session_state.lung_class_label,
+                            class_names=class_names_lung_cancer
+                        )
+                        with st.expander("Grad-CAM Results"):
+                            st.pyplot(fig_grad, width='content')
+                    # except Exception as e:
+                    #     st.error(f"⚠️ Grad-CAM Error: {str(e)}")
+
+            if use_shap:
+                st.markdown("### SHAP Gradient Explanation")
+                with st.spinner("Generating SHAP Gradient results..."):
+                    fig_shap = SHAP_GRADIENT().explain(
+                        image=st.session_state.lung_image,
+                        model=st.session_state.lung_model,
+                        class_idx=st.session_state.lung_class_label,
+                        background=[st.session_state.lung_image],
+                        num_samples=100
+                    )
+                    with st.expander("SHAP Gradient Results"):
+                        st.pyplot(fig_shap, width='content')
+            if use_occlu:
+                st.markdown("### Occlusion Sensitivity Explanation")
+                with st.spinner("Generating Occlusion Sensitivity results..."):
+                    try:
+                        st.warning("Occlusion Sensitivity for PyTorch models requires additional implementation. Please use LIME for now.")
+                    except Exception as e:
+                        st.error(f"⚠️ Occlusion Sensitivity Error: {str(e)}")
+
+            if use_int_grad:
+                st.markdown("### Integrated Gradients Explanation")
+                with st.spinner("Generating Integrated Gradients results..."):
+                    try:
+                        st.warning("Integrated Gradients for PyTorch models requires additional implementation. Please use LIME for now.")
+                    except Exception as e:
+                        st.error(f"⚠️ Integrated Gradients Error: {str(e)}")
 
 
 
