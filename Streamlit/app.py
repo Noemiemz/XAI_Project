@@ -28,8 +28,8 @@ ALLOWED_FILE_TYPES = {
 }
 
 st.set_page_config(
-    page_title="XAI Audio Detection",
-    page_icon="🐈",
+    page_title="XAI Platform",
+    page_icon="img/robot.gif",
     layout="wide"
 )
 
@@ -70,8 +70,16 @@ MODELS_TYPE = {
 
 if "prediction_done" not in st.session_state:
     st.session_state.prediction_done = False
-if "selected_model" not in st.session_state:
-    st.session_state.selected_model = list(AVAILABLE_MODELS_AUDIO.keys())[0]
+
+if "lung_prediction_done" not in st.session_state:
+    st.session_state.lung_prediction_done = False
+
+if "audio_selected_model" not in st.session_state:
+    st.session_state.audio_selected_model = list(AVAILABLE_MODELS_AUDIO.keys())[0]
+
+if "lung_selected_model" not in st.session_state:
+    st.session_state.lung_selected_model = list(AVAILABLE_MODELS_LUNG.keys())[0]
+
 
 def get_available_xai_methods(model_name):
     """Return list of XAI methods available for the selected model"""
@@ -167,6 +175,7 @@ def create_spectrogram(sound):
     plt.savefig(spec_path)
     image_data = load_img(spec_path ,target_size=(224,224))
     st.image(image_data)
+    st.caption("Mel-Spectrogram (used as CNN input)")
     return image_data
 
 
@@ -186,48 +195,45 @@ def load_background_spectrograms(folder="audio_files/specs", max_images=20):
 
 
 def main():
-    st.sidebar.title('XAI Platform')
-    pipeline = st.sidebar.radio ("What type of detection do you want to do ?:", ["Audio Deepfake Detection", "Lung Cancer Detection"])
-    
-    # Model selection (only for Audio Deepfake Detection)
-    if pipeline == "Audio Deepfake Detection":
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Model Selection")
-        selected_model = st.sidebar.selectbox(
-            "Choose a model:",
-            options=list(AVAILABLE_MODELS_AUDIO.keys()),
-            index=list(AVAILABLE_MODELS_AUDIO.keys()).index(st.session_state.selected_model)
-        )
-        
-        # Reset prediction if model changes
-        if selected_model != st.session_state.selected_model:
-            st.session_state.selected_model = selected_model
-            st.session_state.prediction_done = False
-    
-    if pipeline == "Audio Deepfake Detection":
-        audio_pipeline()
-    elif pipeline == "Lung Cancer Detection":
-        lung_cancer_pipeline()
-    else:
-        st.error("Unknown pipeline selected!")
+    st.title('Explainable AI Platform')
+    tab_audio_deepfake, tab_lung_cancer, tab_about = st.tabs(
+        ["Audio Deepfake Detection", "Lung Cancer Detection", "About"]
+    )
 
-# def about():
-#     st.title("About present work")
-#     st.markdown("**Deepfake audio refers to synthetically created audio by digital or manual means. An emerging field, it is used to not only create legal digital hoaxes, but also fool humans into believing it is a human speaking to them. Through this project, we create our own deep faked audio using Generative Adversarial Neural Networks (GANs) and objectively evaluate generator quality using Fréchet Audio Distance (FAD) metric. We augment a pre-existing dataset of real audio samples with our fake generated samples and classify data as real or fake using MobileNet, Inception, VGG and custom CNN models. MobileNet is the best performing model with an accuracy of 91.5% and precision of 0.507. We further convert our black box deep learning models into white box models, by using explainable AI (XAI) models. We quantitatively evaluate the classification of a MEL Spectrogram through LIME, SHAP and GradCAM models. We compare the features of a spectrogram that an XAI model focuses on to provide a qualitative analysis of frequency distribution in spectrograms.**")
-#     st.markdown("**The goal of this project is to study features of audio and bridge the gap of explain ability in deep fake audio detection, through our novel system pipeline. The findings of this study are applicable to the fields of phishing audio calls and digital mimicry detection on video streaming platforms. The use of XAI will provide end-users a clear picture of frequencies in audio that are flagged as fake, enabling them to make better decisions in generation of fake samples through GANs.**")
+    with tab_audio_deepfake:
+        audio_pipeline()
+
+    with tab_lung_cancer:
+        lung_cancer_pipeline()
+
+    with tab_about:
+        about()
+
+
+def about():
+    st.title("About the Project")
+
+
+
 
 def audio_pipeline():
-    # with st.expander("What does this app do?", expanded=True):
-    #     st.write(
-    #         """
-    #         This application detects **deepfake audio** using a deep learning model.
-    #         It then explains the prediction using **Explainable AI (XAI)** techniques
-    #         like **LIME** and **Grad-CAM**.
-    #         """
-    #     )
 
     st.title("Audio Deepfake Detection with XAI")
     st.markdown("Upload an audio file to detect if it's **real** or **fake** and understand the model's decision with Explainability AI (XAI).")
+
+    st.divider()
+
+    with st.expander("Model Settings", expanded=True):
+        selected_audio_model = st.selectbox(
+            "Choose a model to classify your audio:",
+            options=list(AVAILABLE_MODELS_AUDIO.keys()),
+            index=list(AVAILABLE_MODELS_AUDIO.keys()).index(st.session_state.audio_selected_model)
+        )
+        
+        # Reset prediction if model changes
+        if selected_audio_model != st.session_state.audio_selected_model:
+            st.session_state.audio_selected_model = selected_audio_model
+            st.session_state.prediction_done = False
 
     st.divider()
 
@@ -235,11 +241,12 @@ def audio_pipeline():
 
     with col1:
         st.markdown("### Upload Audio")
-        uploaded_file = st.file_uploader(
-            "Choose an audio file",
-            type=['wav','mp3'],
-            help="Only .wav and .mp3 files are supported"
-        )
+        with st.container(border=True):
+            uploaded_file = st.file_uploader(
+                "Choose an audio file",
+                type=['wav','mp3'],
+                help="Only .wav and .mp3 files are supported"
+            )
 
         if not uploaded_file:
             # Clean up old file if user removed it
@@ -276,7 +283,7 @@ def audio_pipeline():
             # Prediction
             if not st.session_state.prediction_done:
                 with st.spinner("Analyzing audio..."):
-                    model_path = AVAILABLE_MODELS_AUDIO[st.session_state.selected_model]
+                    model_path = AVAILABLE_MODELS_AUDIO[st.session_state.audio_selected_model]
                     if model_path.endswith('.h5'):
                         model = tf.keras.models.load_model(model_path)
                     else:
@@ -294,23 +301,36 @@ def audio_pipeline():
             
             # For sigmoid output: prediction[0][0] is probability of "fake"
             fake_probability = float(prediction[0][0])
-            print(f"Fake probability: {fake_probability}")
-            if class_label == 1:  # fake
-                confidence = fake_probability
-                st.error("The audio is **Fake**")
-            else:  # real
-                confidence = 1 - fake_probability
-                st.success("The audio is **Real**")
 
-            st.progress(confidence)
-            st.caption(f"Confidence: {confidence:.2%}")
+            st.subheader("Prediction Result")
+
+            col_a, col_b = st.columns([2, 1])
+
+            with col_a:
+                if class_label == 1:  # fake
+                    confidence = fake_probability
+                    st.error("The audio is **Fake**")
+                else:  # real
+                    confidence = 1 - fake_probability
+                    st.success("The audio is **Real**")
+            
+            with col_b:
+                st.metric(
+                    label="Confidence",
+                    value=f"{confidence:.1%}"
+                )
 
         # XAI
         st.divider()
+
+        if not st.session_state.prediction_done:
+            st.info("Run a prediction to enable Explainability.")
+            return
+        
         st.markdown("## Explainability")
 
-        st.markdown("**Select XAI methods:**")
-        available_methods = get_available_xai_methods(st.session_state.selected_model)
+        st.markdown("**Select the XAI methods you want to try:**")
+        available_methods = get_available_xai_methods(st.session_state.audio_selected_model)
         
         col_lime, col_gradcam, col_shap, col_occlu, col_int_grad  = st.columns(5, width=800, border=True)
         
@@ -416,29 +436,35 @@ def audio_pipeline():
     
 def lung_cancer_pipeline():
     st.title("Lung Cancer Detection")
-    st.markdown("Upload an x-ray image for lung cancer analysis and understand the model's decision with Explainability AI (XAI).")
+    st.markdown("Upload a chest X-ray image for lung cancer analysis and understand the model's decision with Explainability AI (XAI).")
 
     st.divider()
 
-    # Model selection for Lung Cancer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Model Selection")
-    selected_lung_model = st.sidebar.selectbox(
-        "Choose a model:",
-        options=list(AVAILABLE_MODELS_LUNG.keys()),
-        key="lung_model_select"
-    )
+    with st.expander("Model Settings", expanded=True):
+        selected_lung_model = st.selectbox(
+            "Choose a model to classify chest X-ray image:",
+            options=list(AVAILABLE_MODELS_LUNG.keys()),
+            index=list(AVAILABLE_MODELS_LUNG.keys()).index(st.session_state.lung_selected_model)
+        )
+        
+        # Reset prediction if model changes
+        if selected_lung_model != st.session_state.lung_selected_model:
+            st.session_state.lung_selected_model = selected_lung_model
+            st.session_state.lung_prediction_done = False
+
+    st.divider()
 
     col1, col2 = st.columns([1, 1])
 
     with col1:
         st.markdown("### Upload Image")
-        uploaded_file = st.file_uploader(
-            "Choose an image file",
-            type=['png','jpg','jpeg'],
-            help="Only .png, .jpg and .jpeg files are supported",
-            key="lung_file_uploader"
-        )
+        with st.container(border=True):
+            uploaded_file = st.file_uploader(
+                "Choose an image file",
+                type=['png','jpg','jpeg'],
+                help="Only .png, .jpg and .jpeg files are supported",
+                key="lung_file_uploader"
+            )
 
         if not uploaded_file:
             st.info("Please upload a file to begin.")
@@ -449,19 +475,19 @@ def lung_cancer_pipeline():
                 st.error("This file type is not allowed. Please upload a .png, .jpg or .jpeg file.")
                 return
             
-            # Display the image
-            image = Image.open(uploaded_file)
-            st.image(image, width=400)
 
     if uploaded_file:
         with col2:
-            st.markdown("### Prediction")
+            # Display the image
+            st.markdown("### X-ray Image")
+            image = Image.open(uploaded_file)
+            st.image(image, width=400)
 
             # Prediction
             if not st.session_state.get("lung_prediction_done", False):
                 with st.spinner("Analyzing image..."):
                     device = "cuda" if torch.cuda.is_available() else "cpu"
-                    model_path = AVAILABLE_MODELS_LUNG[selected_lung_model]
+                    model_path = AVAILABLE_MODELS_LUNG[st.session_state.lung_selected_model]
                     
                     # Load PyTorch model
                     model = load_pytorch_model(model_path, device=device)
@@ -484,22 +510,34 @@ def lung_cancer_pipeline():
             benign_prob = float(prediction[0][0])
             malignant_prob = float(prediction[0][1])
             
-            if class_label == 1:  # malignant
-                confidence = malignant_prob
-                st.error("The image shows **Malignant** (Lung Cancer Detected)")
-            else:  # benign
-                confidence = benign_prob
-                st.success("The image shows **Benign** (No Cancer Detected)")
+            st.subheader("Prediction Result")
 
-            st.progress(confidence)
-            st.caption(f"Confidence: {confidence:.2%}")
+            col_a, col_b = st.columns([2, 1])
+
+            with col_a:
+                if class_label == 1:  # malignant
+                    confidence = malignant_prob
+                    st.error("The image shows **Malignant** (Lung Cancer Detected)")
+                else:  # benign
+                    confidence = benign_prob
+                    st.success("The image shows **Benign** (No Cancer Detected)")
+
+            with col_b:
+                st.metric(
+                    label="Confidence",
+                    value=f"{confidence:.1%}"
+                )
 
         # XAI
         st.divider()
+        if not st.session_state.lung_prediction_done:
+            st.info("Run a prediction to enable Explainability.")
+            return
+        
         st.markdown("## Explainability")
 
-        st.markdown("**Select XAI methods:**")
-        available_methods = get_available_xai_methods(selected_lung_model)
+        st.markdown("**Select the XAI methods you want to try:**")
+        available_methods = get_available_xai_methods(st.session_state.lung_selected_model)
         
         col_lime, col_gradcam, col_shap, col_occlu, col_int_grad = st.columns(5, width=800, border=True)
         

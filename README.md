@@ -15,7 +15,7 @@ Class: **DIA2**
 This project aims to create a unified explainable (XAI) interface, allowing users to classify audio and image files with Deep Learning models but most importantly, analyze the results via XAI techniques to gain insights into the model's decisions.
 
 The platform gives the possibility for users to either detect **audio deepfakes** or **detect lung cancer**:
-- **Audio Deepfake Detection**: detects if an audio is real or not, using models like VGG16, MobileNet, ResNet and a custom CNN model. Audio files are first processed into spectrograms for a better performance.
+- **Audio Deepfake Detection**: detects if an audio is real or not, using models like VGG16, MobileNet and ResNet. Audio files are first processed into spectrograms for a better performance.
 - **Lung Cancer Detection**: detects malignant tumors in chest X-rays, using the fine-tuned AlexNet and DenseNet models.
 
 The platform integrates XAI methods such as LIME, Grad-CAM, SHAP, Occlusion Sensitivity and Integrated Gradients to better understand the different models' predictions and have a better transparency in the models' decisions.
@@ -37,7 +37,7 @@ Users can upload an audio file, select a model, apply one or several XAI methods
 
 - **Input**: Audio files (.wav, .mp3)
 
-- **Models**: VGG16, MobileNet, ResNet, Custom CNN
+- **Models**: VGG16, MobileNet, ResNet
 
 - **XAI**: LIME, SHAP, Grad-CAM (on spectrograms), Occlusion Sensitivity, Integrated Gradients
 
@@ -56,7 +56,7 @@ Users can upload chest X-rays in the form of an image, select a model, apply one
 ## Technologies Used
 
 - **Deep Learning Models**: 
-    - *Audio Deepfake Detection*: VGG16, MobileNet, ResNet, Custom CNN
+    - *Audio Deepfake Detection*: VGG16, MobileNet, ResNet
     - *Lung Cancer Detection*: AlexNet, DenseNet
 - **Explainable AI (XAI) Techniques**: LIME, Grad-CAM, SHAP
 - **Programming Languages and Libraries**: Python, TensorFlow, Keras, Matplotlib, NumPy, Librosa
