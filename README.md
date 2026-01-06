@@ -73,6 +73,12 @@ The Streamlit interface allows users to interact with the tasks and models in a 
 - Visualize results and explanations
 - Compare multiple explainability outputs in a side-by-side comparison tab
 
+#### Interface Examples
+![Interface - Prediction](img/interface_1.gif)
+![Interface - XAI](img/interface_2.gif)
+
+#### Full Comparison Tab
+![Interface - Full Comparison](img/full_comparison.gif)
 
 ## Setup and Installation
 
