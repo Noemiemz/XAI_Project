@@ -32,72 +32,61 @@ The platform integrates XAI methods such as LIME, Grad-CAM, SHAP, Occlusion Sens
 XAI_Project
 |
 ├── audio_files/
-│   └── specs/
-│       ├── audio_1.mp3
-│       ├── audio_1.wav
-│       └── output.wav
+│   ├── specs/
+│   │   ├── audio_1_spec.png
+│   │   ├── audio_2_spec.png
+│   │   ├── ...
+│   │   └── audio_11_spec.png
+│   ├── audio_1.mp3
+│   ├── audio_1.wav
+│   └── output.wav
 │
 ├── Code/
+│   ├── Audio_Deepfake_Detection_Notebooks/
+│   │   └── train_audio_classifiers.ipynb
+│   │
 │   ├── Lung_Cancer_Detection_Notebooks/
 │   │   ├── Lung_Cancer_Detection_With_VAE.ipynb
 │   │   └── Lung_Cancer_Detection_Without_VAE.ipynb
 │   │
-│   └── train_audio_classifiers.ipynb
-│
-├── image_files/
-│   ├── image19.jpg
-│   └── image19.png
-│
-├── images_readme/
-│   ├── Model_performanc.png
-│   ├── spectrogram_example.png
-│   ├── Streamlit_demo.gif
-│   ├── Streamlit_homepage.png
-│   └── XAI_model_comparison.png
-│
-├── img/
-│   ├── 2026_01_06_21_43_38.mp4
-│   ├── 2026_01_06_21_49_19.mp4
-│   ├── 2026_01_06_21_50_01.mp4
-│   ├── 2026_01_06_21_50_01.mp4
-│   ├── full_comparison.mp4
-│   ├── Model_performanc.png
-│   ├── robot.gif
-│   ├── spectrogram_example.png
-│   ├── Streamlit_demo.gif
-│   ├── Streamlit_homepage.png
-│   └── XAI_model_comparison.png
-│
-├── Inference/
-│   ├── __pycache__/
-│   ├── __init__.cpython-312.pyc
-│   ├── inference.cpython-312.pyc
-│   ├── __init__.py
-│   └── inference.py
+│   ├── image_files/
+│   │   ├── image19.jpg
+│   │   └── image19.png
+│   │
+│   ├── images_readme/
+│   │   ├── full_comparison.gif
+│   │   ├── interface_1.gif
+│   │   ├── interface_2.gif
+│   │   └── robot.gif
+│   │
+│   └── Inference/
+│       ├── __pycache__/
+│       ├── __init__.cpython-312.pyc
+│       ├── inference.cpython-312.pyc
+│       ├── __init__.py
+│       └── inference.py
 │
 ├── models/
 │   ├── Lung_Cancer_Detection/
-│   ├── xai_audioclassifiers/
+│   │   └── xai_audioclassifiers/
+│   │
 │   └── Streamlit/
 │       ├── saved_model/
 │       │   └── model/
 │       │       └── variables/
+│       │           ├── variables.data-00000-of-00001
+│       │           └── variables.index
+│       │
+│       ├── __pycache__/
+│       ├── __init__.cpython-312.pyc
+│       ├── xai_models.cpython-312.pyc
 │       ├── __init__.py
-│       ├── app.py
-│       └── lorrain.ipynb
-│
-├── XAI_models/
-│   ├── __pycache__/
-│   ├── __init__.cpython-312.pyc
-│   ├── xai_models.cpython-312.pyc
-│   ├── __init__.py
-│   └── xai_models.py
+│       └── xai_models.py
 │
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
-└── run_app.sh
-
+└── requirements2.txt
 ```
 
 ## Audio Deepfake Detection
@@ -203,5 +192,6 @@ Open the URL shown in the terminal in your web browser (ex: http://localhost:850
 
 ---
 ## Generative AI Usage Statement
+
 
 
