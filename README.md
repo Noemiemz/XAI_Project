@@ -45,48 +45,42 @@ XAI_Project
 │   ├── Audio_Deepfake_Detection_Notebooks/
 │   │   └── train_audio_classifiers.ipynb
 │   │
-│   ├── Lung_Cancer_Detection_Notebooks/
-│   │   ├── Lung_Cancer_Detection_With_VAE.ipynb
-│   │   └── Lung_Cancer_Detection_Without_VAE.ipynb
-│   │
-│   ├── image_files/
-│   │   ├── image19.jpg
-│   │   └── image19.png
-│   │
-│   ├── images_readme/
-│   │   ├── full_comparison.gif
-│   │   ├── interface_1.gif
-│   │   ├── interface_2.gif
-│   │   └── robot.gif
-│   │
-│   └── Inference/
-│       ├── __pycache__/
-│       ├── __init__.cpython-312.pyc
-│       ├── inference.cpython-312.pyc
-│       ├── __init__.py
-│       └── inference.py
+│   └── Lung_Cancer_Detection_Notebooks/
+│       ├── Lung_Cancer_Detection_With_VAE.ipynb
+│       └── Lung_Cancer_Detection_Without_VAE.ipynb
+│   
+├── image_files/
+│   ├── image19.jpg
+│   └── image19.png
+│
+├── img/
+│   ├── full_comparison.gif
+│   ├── interface_1.gif
+│   ├── interface_2.gif
+│   └── robot.gif
+│
+├── Inference/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   └── inference.py
 │
 ├── models/
 │   ├── Lung_Cancer_Detection/
-│   │   └── xai_audioclassifiers/
-│   │
-│   └── Streamlit/
-│       ├── saved_model/
-│       │   └── model/
-│       │       └── variables/
-│       │           ├── variables.data-00000-of-00001
-│       │           └── variables.index
-│       │
-│       ├── __pycache__/
-│       ├── __init__.cpython-312.pyc
-│       ├── xai_models.cpython-312.pyc
-│       ├── __init__.py
-│       └── xai_models.py
+│   └── xai_audioclassifiers/
+│
+├── Streamlit/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   └── app.py
+│
+├── XAI_models/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   └── xai_models.py
 │
 ├── .gitignore
 ├── README.md
-├── requirements.txt
-└── requirements2.txt
+└── requirements.txt
 ```
 
 ## Audio Deepfake Detection
