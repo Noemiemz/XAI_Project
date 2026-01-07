@@ -29,7 +29,58 @@ The platform integrates XAI methods such as LIME, Grad-CAM, SHAP, Occlusion Sens
 
 ## Project Structure
 ```
-
+XAI_Project
+|
+├── audio_files/
+│   ├── specs/
+│   │   ├── audio_1_spec.png
+│   │   ├── audio_2_spec.png
+│   │   ├── ...
+│   │   └── audio_11_spec.png
+│   ├── audio_1.mp3
+│   ├── audio_1.wav
+│   └── output.wav
+│
+├── Code/
+│   ├── Audio_Deepfake_Detection_Notebooks/
+│   │   └── train_audio_classifiers.ipynb
+│   │
+│   └── Lung_Cancer_Detection_Notebooks/
+│       ├── Lung_Cancer_Detection_With_VAE.ipynb
+│       └── Lung_Cancer_Detection_Without_VAE.ipynb
+│   
+├── image_files/
+│   ├── image19.jpg
+│   └── image19.png
+│
+├── img/
+│   ├── full_comparison.gif
+│   ├── interface_1.gif
+│   ├── interface_2.gif
+│   └── robot.gif
+│
+├── Inference/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   └── inference.py
+│
+├── models/
+│   ├── Lung_Cancer_Detection/
+│   └── xai_audioclassifiers/
+│
+├── Streamlit/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   └── app.py
+│
+├── XAI_models/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   └── xai_models.py
+│
+├── .gitignore
+├── README.md
+└── requirements.txt
 ```
 
 ## Audio Deepfake Detection
@@ -73,6 +124,12 @@ The Streamlit interface allows users to interact with the tasks and models in a 
 - Visualize results and explanations
 - Compare multiple explainability outputs in a side-by-side comparison tab
 
+#### Interface Examples
+![Interface - Prediction](img/interface_1.gif)
+![Interface - XAI](img/interface_2.gif)
+
+#### Full Comparison Tab
+![Interface - Full Comparison](img/full_comparison.gif)
 
 ## Setup and Installation
 
@@ -129,4 +186,6 @@ Open the URL shown in the terminal in your web browser (ex: http://localhost:850
 
 ---
 ## Generative AI Usage Statement
+
+
 
