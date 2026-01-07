@@ -180,7 +180,7 @@ We also use generative AI (Mistral) for the Challenges part to avoid making mist
 
 #### Code
 For the code, we used ChatGPT and Mistral to support us while coding. It was mainly to help us move forward when we had difficulties but also to gain time.
-- For the lung cancer detection models, we used AI for the processing of the dataset to get training and validation data as close as to what was described, the construction of the Variational Autoencoder and CVAE but also to help with the model training and tuning of parameters. We had to adapt the original paper to our limited resources. 
+- For the lung cancer detection and audio classifier trainings, we used AI for the processing of the dataset to get training and validation data as close as to what was described, the construction of the Variational Autoencoder and CVAE but also to help with the model training and tuning of parameters. We had to adapt the original paper to our limited resources. 
 - For the Streamlit interface, we used AI to help with the design of the application. It was helpful to quickly get the hang of the different functions used in Streamlit and to quickly get a satisfying interface. We always had the ideas and we knew exactly what we wanted to do and how but then the AI made us gain time to actually implement it.
 - For the XAI methods, we used it especially for the SHAP implementation which was very difficult to implement correctly. It also helped adapt the explainability functions to the different frameworks we used: when handling models saved in different format for example (Tensorflow in .h5 and PyTorch in .pth). overall, after choosing the XAI methods we wanted to use, we used AI to help the implementation. 
 - Overall, AI was used to debug, understand the errors and help with the whole implementation.
@@ -188,6 +188,7 @@ For the code, we used ChatGPT and Mistral to support us while coding. It was mai
 #### Readme
 We generate the project structure using Mistral and giving it screenshots of the project structure. We decided to use generative AI for this task because we thought it was a task that just requires rewriting some names, that can last few times and doesn’t require specific thinking.
 We also used it for some sections to write a clear setup for example or to have a more concise phrasing.
+
 
 
 
