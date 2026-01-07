@@ -18,12 +18,12 @@ The platform gives the possibility for users to either detect **audio deepfakes*
 - **Audio Deepfake Detection**: detects if an audio is real or not, using models like VGG16, MobileNet and ResNet. Audio files are first processed into spectrograms for a better performance.
 - **Lung Cancer Detection**: detects malignant tumors in chest X-rays, using the fine-tuned AlexNet and DenseNet models.
 
-The platform integrates XAI methods such as LIME, Grad-CAM, SHAP, Occlusion Sensitivity and Integrated Gradients to better understand the different models' predictions and have a better transparency in the models' decisions.
+The platform integrates XAI methods such as LIME, Grad-CAM, SHAP Kernel, Occlusion Sensitivity and Integrated Gradients to better understand the different models' predictions and have a better transparency in the models' decisions.
 
 ## Key Features
 - Multi-modal support: audio (.wav and .mp3) and images (chest X-rays in .jpg, .jpeg and .png).
 - Choice between several classification models for both tasks.
-- Application of different XAI methods: LIME, Grad-CAM, SHAP, Occlusion Sensitivity, Integrated Gradients. 
+- Application of different XAI methods: LIME, Grad-CAM, SHAP Kernel, Occlusion Sensitivity, Integrated Gradients. 
 - Automatic filtering of the proposed XAI techniques based on the input type.
 - Web interface via Streamlit.
 
@@ -41,10 +41,9 @@ XAI_Project
 │   ├── audio_1.wav
 │   └── output.wav
 │
-├── Code/
+├── models training/
 │   ├── Audio_Deepfake_Detection_Notebooks/
 │   │   └── train_audio_classifiers.ipynb
-│   │
 │   └── Lung_Cancer_Detection_Notebooks/
 │       ├── Lung_Cancer_Detection_With_VAE.ipynb
 │       └── Lung_Cancer_Detection_Without_VAE.ipynb
@@ -59,25 +58,13 @@ XAI_Project
 │   ├── interface_2.gif
 │   └── robot.gif
 │
-├── Inference/
-│   ├── __pycache__/
-│   ├── __init__.py
-│   └── inference.py
-│
 ├── models/
 │   ├── Lung_Cancer_Detection/
 │   └── xai_audioclassifiers/
 │
-├── Streamlit/
-│   ├── __pycache__/
-│   ├── __init__.py
-│   └── app.py
-│
-├── XAI_models/
-│   ├── __pycache__/
-│   ├── __init__.py
-│   └── xai_models.py
-│
+├── inference.py
+├── app.py
+├── xai_models.py
 ├── .gitignore
 ├── README.md
 └── requirements.txt
@@ -90,7 +77,7 @@ Users can upload an audio file, select a model, apply one or several XAI methods
 
 - **Models**: VGG16, MobileNet, ResNet
 
-- **XAI**: LIME, SHAP, Grad-CAM (on spectrograms), Occlusion Sensitivity, Integrated Gradients
+- **XAI**: LIME, SHAP Kernel, Grad-CAM (on spectrograms), Occlusion Sensitivity, Integrated Gradients
 
 
 
@@ -101,7 +88,7 @@ Users can upload chest X-rays in the form of an image, select a model, apply one
 
 - **Models**: AlexNet, DenseNet
 
-- **XAI**: Grad-CAM, LIME, SHAP, Occlusion Sensitivity, Integrated Gradients
+- **XAI**: Grad-CAM, LIME, SHAP Kernel, Occlusion Sensitivity, Integrated Gradients
 
 
 ## Technologies Used
@@ -109,7 +96,7 @@ Users can upload chest X-rays in the form of an image, select a model, apply one
 - **Deep Learning Models**: 
     - *Audio Deepfake Detection*: VGG16, MobileNet, ResNet
     - *Lung Cancer Detection*: AlexNet, DenseNet
-- **Explainable AI (XAI) Techniques**: LIME, Grad-CAM, SHAP
+- **Explainable AI (XAI) Techniques**: LIME, Grad-CAM, SHAP Kernel, Occlusion Sensitivity, Integrated Gradients
 - **Programming Languages and Libraries**: Python, TensorFlow, Keras, Matplotlib, NumPy, Librosa
 - **Development Tools**: Jupyter Notebooks
 - **Web Application Framework**: Streamlit
@@ -186,6 +173,22 @@ Open the URL shown in the terminal in your web browser (ex: http://localhost:850
 
 ---
 ## Generative AI Usage Statement
+
+#### Report
+We used generative AI (Mistral) in the report especially for the presentation of the XAI methods. Indeed, we made some researches at the beginning of the project about the several XAI methods we could use and we kept the answers to write this report.
+We also use generative AI (Mistral) for the Challenges part to avoid making mistake about the technical vocabulary. We write a text about the challenges and ask to mistral to correct if some terms were not well employed.
+
+#### Code
+For the code, we used ChatGPT and Mistral to support us while coding. It was mainly to help us move forward when we had difficulties but also to gain time.
+- For the lung cancer detection models, we used AI for the processing of the dataset to get training and validation data as close as to what was described, the construction of the Variational Autoencoder and CVAE but also to help with the model training and tuning of parameters. We had to adapt the original paper to our limited resources. 
+- For the Streamlit interface, we used AI to help with the design of the application. It was helpful to quickly get the hang of the different functions used in Streamlit and to quickly get a satisfying interface. We always had the ideas and we knew exactly what we wanted to do and how but then the AI made us gain time to actually implement it.
+- For the XAI methods, we used it especially for the SHAP implementation which was very difficult to implement correctly. It also helped adapt the explainability functions to the different frameworks we used: when handling models saved in different format for example (Tensorflow in .h5 and PyTorch in .pth). overall, after choosing the XAI methods we wanted to use, we used AI to help the implementation. 
+- Overall, AI was used to debug, understand the errors and help with the whole implementation.
+  
+#### Readme
+We generate the project structure using Mistral and giving it screenshots of the project structure. We decided to use generative AI for this task because we thought it was a task that just requires rewriting some names, that can last few times and doesn’t require specific thinking.
+We also used it for some sections to write a clear setup for example or to have a more concise phrasing.
+
 
 
 
