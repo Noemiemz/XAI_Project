@@ -8,7 +8,6 @@ from skimage.segmentation import mark_boundaries
 from keras.preprocessing.image import img_to_array
 
 import shap
-from keras.applications.vgg16 import preprocess_input
 
 import torch
 import torch.nn.functional as F
