@@ -19,7 +19,7 @@ import torch
 from torchvision import models
 import torch.nn as nn
 
-from XAI_models.xai_models import Lime, GradCAM, SHAP_GRADIENT, OcclusionSensitivity, IntegratedGradients
+from XAI_models.xai_models import Lime, GradCAM, SHAP_GRADIENT, OcclusionSensitivity, IntegratedGradients, SHAPKernelExplainer
 from Inference.inference import predict_image, predict_image_pytorch
 
 ALLOWED_FILE_TYPES = {
@@ -53,6 +53,7 @@ XAI_METHODS_AUTHORIZED_TYPE_OF_MODELS = {
     "LIME": ["ALL"],
     "GradCAM": ["CNN"],
     "SHAP_GRADIENT": ["ALL"],
+    "SHAP_KERNEL": ["ALL"],
     "OcclusionSensitivity": ["CNN"],
     "IntegratedGradients": ["ALL"],
 }
@@ -249,7 +250,9 @@ def main():
                     st.error("Unsupported file type for comparison")
 
         if preview_image is not None:
-            comparison_tab(preview_image, task=file_category)
+            # Map file_category to task type: "image" -> "lung", "audio" -> "audio"
+            task_type = "lung" if file_category == "image" else file_category
+            comparison_tab(preview_image, task=task_type)
 
     with tab_about:
         about()
@@ -427,6 +430,7 @@ def audio_pipeline():
         use_lime = selected_xai.get("LIME", False)
         use_gradcam = selected_xai.get("GradCAM", False)
         use_shap = selected_xai.get("SHAP_GRADIENT", False)
+        use_shap_kernel = selected_xai.get("SHAP_KERNEL", False)
         use_occlu = selected_xai.get("OcclusionSensitivity", False)
         use_int_grad = selected_xai.get("IntegratedGradients", False)
         
@@ -477,12 +481,28 @@ def audio_pipeline():
                             image=spec,
                             model=st.session_state.model,
                             class_idx=st.session_state.class_label,
-                            class_names=st.session_state.class_names,
+                            # class_names=st.session_state.class_names,
                             background=background_images,
                             num_samples=100
                         )
                         with st.expander("SHAP Gradient Results"):
                             st.pyplot(fig_shap, width='content')
+            
+            if use_shap_kernel:
+                st.markdown("### SHAP Kernel Explanation")
+                with st.spinner("Generating SHAP Kernel results..."):
+                    try:
+                        fig_shap_kernel = SHAPKernelExplainer().explain(
+                            image=spec,
+                            model=st.session_state.model,
+                            class_idx=st.session_state.class_label,
+                            class_names=class_names_audio_deepfakes,
+                            max_evals=1000
+                        )
+                        with st.expander("SHAP Kernel Results"):
+                            st.pyplot(fig_shap_kernel, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ SHAP Kernel Error: {str(e)[:100]}")
             
             if use_occlu:
                 st.markdown("### Occlusion Sensitivity Explanation")
@@ -641,6 +661,7 @@ def lung_cancer_pipeline():
         use_lime = selected_xai.get("LIME", False)
         use_gradcam = selected_xai.get("GradCAM", False)
         use_shap = selected_xai.get("SHAP_GRADIENT", False)
+        use_shap_kernel = selected_xai.get("SHAP_KERNEL", False)
         use_occlu = selected_xai.get("OcclusionSensitivity", False)
         use_int_grad = selected_xai.get("IntegratedGradients", False)
 
@@ -687,12 +708,28 @@ def lung_cancer_pipeline():
                         image=st.session_state.lung_image,
                         model=st.session_state.lung_model,
                         class_idx=st.session_state.lung_class_label,
-                        class_names=st.session_state.class_names,
+                        # class_names=st.session_state.class_names,
                         background=[st.session_state.lung_image],
                         num_samples=100
                     )
                     with st.expander("SHAP Gradient Results"):
                         st.pyplot(fig_shap, width='content')
+            
+            if use_shap_kernel:
+                st.markdown("### SHAP Kernel Explanation")
+                with st.spinner("Generating SHAP Kernel results..."):
+                    try:
+                        fig_shap_kernel = SHAPKernelExplainer().explain(
+                            image=st.session_state.lung_image,
+                            model=st.session_state.lung_model,
+                            class_idx=st.session_state.lung_class_label,
+                            class_names=class_names_lung_cancer,
+                            max_evals=1000
+                        )
+                        with st.expander("SHAP Kernel Results"):
+                            st.pyplot(fig_shap_kernel, width='content')
+                    except Exception as e:
+                        st.error(f"⚠️ SHAP Kernel Error: {str(e)[:100]}")
             
             if use_occlu:
                 st.markdown("### Occlusion Sensitivity Explanation")
@@ -800,6 +837,14 @@ def comparison_tab(input_image, task="lung"):
                                     num_samples=50,
                                     return_image_only=True
                                 )
+                            elif method == "SHAP_KERNEL":
+                                fig = SHAPKernelExplainer().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    max_evals=500
+                                )
                             elif method == "OcclusionSensitivity":
                                 fig = OcclusionSensitivity().explain(
                                     image=input_image,
@@ -851,6 +896,14 @@ def comparison_tab(input_image, task="lung"):
                                     background=[input_image],
                                     num_samples=50,
                                     return_image_only=True
+                                )
+                            elif method == "SHAP_KERNEL":
+                                fig = SHAPKernelExplainer().explain(
+                                    image=input_image,
+                                    model=model,
+                                    class_idx=0,
+                                    class_names=class_names,
+                                    max_evals=500
                                 )
                             elif method == "OcclusionSensitivity":
                                 fig = OcclusionSensitivity().explain(
